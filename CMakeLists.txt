@@ -356,7 +356,8 @@ add_library( qgd SHARED
     ${PROJECT_SOURCE_DIR}/decomposition/N_Qubit_Decomposition_custom.cpp
     ${PROJECT_SOURCE_DIR}/decomposition/N_Qubit_Decomposition_Cost_Function.cpp
     ${PROJECT_SOURCE_DIR}/decomposition/Sub_Matrix_Decomposition_Cost_Function.cpp
-    ${PROJECT_SOURCE_DIR}/decomposition/Sub_Matrix_Decomposition.cpp  
+    ${PROJECT_SOURCE_DIR}/decomposition/Sub_Matrix_Decomposition.cpp 
+    ${PROJECT_SOURCE_DIR}/state_preparation/N_Qubit_State_Preparation_adaptive.cpp
     ${PROJECT_SOURCE_DIR}/random_unitary/Random_Unitary.cpp
     ${PROJECT_SOURCE_DIR}/random_unitary/Random_Orthogonal.cpp
 )
@@ -388,6 +389,7 @@ target_include_directories(qgd PRIVATE
                             ./common/include
                             ./gates/include
                             ./decomposition/include
+                            ./state_preparation/include
                             ./random_unitary/include
                             ${EXTRA_INCLUDES})
 
@@ -427,6 +429,7 @@ set_target_properties(qgd PROPERTIES
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/decomposition/include/N_Qubit_Decomposition.h
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/decomposition/include/Sub_Matrix_Decomposition_Cost_Function.h
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/decomposition/include/Sub_Matrix_Decomposition.h
+    PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/state_preparation/include/N_Qubit_State_Preparation_adaptive.h
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/random_unitary/include/Random_Unitary.h
     PUBLIC_HEADER ${PROJECT_SOURCE_DIR}/random_unitary/include/Random_Orthogonal.h
 )
@@ -446,6 +449,7 @@ set_target_properties(
 # adding CMAKE files for Python extensions
 add_subdirectory (qgd_python/decomposition)
 add_subdirectory (qgd_python/gates)
+add_subdirectory (qgd_python/state_preparation)
 
 
 if(DEFINED ENV{QGD_CTEST})

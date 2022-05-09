@@ -26,11 +26,12 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 
 import numpy as np
 from os import path
+from qgd_python.state_preparation.qgd_N_Qubit_State_Preparation_adaptive_Wrapper import qgd_N_Qubit_State_Preparation_adaptive_Wrapper
 
 
 ##
 # @brief A QGD Python interface class for the preparation of N qubits from base state into another.
-class qgd_N_Qubit_State_Preparation():
+class qgd_N_Qubit_State_Preparation_adaptive(qgd_N_Qubit_State_Preparation_adaptive_Wrapper):
     
     
 ## 
@@ -39,19 +40,10 @@ class qgd_N_Qubit_State_Preparation():
 # @param optimize_layer_num Set true to optimize the minimum number of operation layers required in the decomposition, or false when the predefined maximal number of layer gates is used (ideal for general unitaries).
 # @param initial_guess String indicating the method to guess initial values for the optimalization. Possible values: "zeros" ,"random", "close_to_zero".
 # @return An instance of the class
-    def __init__( self, Stvec, level_limit_max=8, level_limit_min=0, method='LIMITED', topology=None ):
+    def __init__( self, Stvec, level_limit_max=8, level_limit_min=0, topology=None ):
 
         ## the number of qubits
         self.qbit_num = int(round( np.log2( len(Stvec) ) ))
-
-        # validate input parameters
-        if method == 'LIMITED' or method == 'limited' :
-            pass
-        elif method == 'GENERAL' or method == 'general' :
-            pass
-        else: 
-            print('Invalid input argument method=', method, '. Falling back to default.')
-            method = 'limited'
 
         topology_validated = list()
         if isinstance(topology, list) or isinstance(topology, tuple):
@@ -70,17 +62,16 @@ class qgd_N_Qubit_State_Preparation():
         
 
         # call the constructor of the wrapper class
-#        super(qgd_N_Qubit_Decomposition_adaptive, self).__init__(Umtx, self.qbit_num, level_limit_max, level_limit_min, method=method, topology=topology_validated)
+        super(qgd_N_Qubit_State_Preparation_adaptive, self).__init__(Stvec, self.qbit_num, level_limit_max, level_limit_min, topology=topology_validated)
 
 
 ##
 # @brief Wrapper function to call the start_decomposition method of C++ class N_Qubit_Decomposition
 # @param prepare_export Logical parameter. Set true to prepare the list of gates to be exported, or false otherwise.
-    def Start_Decomposition(self,prepare_export=True):
+    def Start_State_Preparation(self, prepare_export=True):
 
 	# call the C wrapper function
-        # super(qgd_N_Qubit_Decomposition_adaptive, self).Start_Decomposition(prepare_export=prepare_export)
-        pass
+        super(qgd_N_Qubit_State_Preparation_adaptive, self).Start_State_Preparation(prepare_export=prepare_export)
 
 
 ##
