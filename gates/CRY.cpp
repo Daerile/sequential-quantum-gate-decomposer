@@ -114,9 +114,9 @@ Phi = Phi - M_PI;
     // get the U3 gate of one qubit
     Matrix u3_1qbit = calc_one_qubit_u3(Theta, Phi, Lambda );
 
-    apply_kernel_to( u3_1qbit, input );
+    //apply_kernel_to( u3_1qbit, input );
 
-/*    int index_step_target = Power_of_2(target_qbit);
+    int index_step_target = Power_of_2(target_qbit);
     int current_idx = 0;
     int current_idx_pair = current_idx+index_step_target;
 
@@ -175,7 +175,7 @@ Phi = Phi - M_PI;
 
     }
 
-*/
+
 }
 
 
@@ -217,9 +217,9 @@ Phi = Phi - M_PI;
     // get the U3 gate of one qubit
     Matrix u3_1qbit = calc_one_qubit_u3(Theta, Phi, Lambda );
 
-    apply_kernel_from_right(u3_1qbit, input);
+    //apply_kernel_from_right(u3_1qbit, input);
 
-/*    int index_step_target = Power_of_2(target_qbit);
+    int index_step_target = Power_of_2(target_qbit);
     int current_idx = 0;
     int current_idx_pair = current_idx+index_step_target;
 
@@ -282,7 +282,7 @@ Phi = Phi - M_PI;
 
 
     }
-*/
+
 
 }
 
