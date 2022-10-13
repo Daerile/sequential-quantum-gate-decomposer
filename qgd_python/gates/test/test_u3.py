@@ -19,8 +19,6 @@ c=ClassicalRegister(1, 'c')
 #Create a Quantum Circuit acting on the q register
 circuit = QuantumCircuit(q, c)
 
-
-
 #Add the u3 gate on qubit pi, pi, 
 circuit.u(pi,pi, pi/2, q[0])
 
