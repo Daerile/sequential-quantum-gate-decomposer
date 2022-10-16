@@ -26,7 +26,7 @@ circuit.u(pi,pi, pi/2, q[0])
 #circuit.measure(q,c)
 
 # Draw the circuit
-#print(circuit)
+print(circuit)
 
 # job execution and getting the result as an object
 job = execute(circuit, backend, shots=8192)
