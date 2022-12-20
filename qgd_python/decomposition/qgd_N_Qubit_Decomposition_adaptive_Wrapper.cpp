@@ -354,8 +354,19 @@ static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_gate_num( qgd_N_Qubit_Decomposition_adaptive_Wrapper *self ) {
 
     // get the number of gates
-    int ret = self->decomp_base->get_gate_num();
-
+    int ret;
+    try{
+    	ret = self->decomp_base->get_gate_num();
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_BuildValue("i", ret);
 
@@ -616,8 +627,22 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_gates( qgd_N_Qubit_Decomposition_
 
 
     // get the number of gates
-    int op_num = self->decomp_base->get_gate_num();
-
+    int op_num;
+    try{
+    	op_num  = self->decomp_base->get_gate_num();
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    
+    
+    
     // preallocate Python tuple for the output
     PyObject* ret = PyTuple_New( (Py_ssize_t) op_num );
 
@@ -627,7 +652,19 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_gates( qgd_N_Qubit_Decomposition_
     for (int idx = 0; idx < op_num; idx++ ) {
 
         // get metadata about the idx-th gate
-        PyObject* gate = get_gate( self->decomp_base, idx );
+        PyObject* gate;
+        try{
+			gate = get_gate( self->decomp_base, idx );
+		}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
 
         // adding gate information to the tuple
         PyTuple_SetItem( ret, (Py_ssize_t) idx, gate );
@@ -646,7 +683,19 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_gates( qgd_N_Qubit_Decomposition_
 static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_Global_Phase(qgd_N_Qubit_Decomposition_adaptive_Wrapper *self ) {
 
-    QGD_Complex16 global_phase_factor_C = self->decomp_base->get_global_phase_factor();
+    QGD_Complex16 global_phase_factor_C;
+    try{
+    	global_phase_factor_C = self->decomp_base->get_global_phase_factor();
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     PyObject* global_phase = PyFloat_FromDouble( std::atan2(global_phase_factor_C.imag,global_phase_factor_C.real));
     return global_phase;
     
@@ -660,7 +709,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_Global_Phase(qgd_N_Qubit_Decompos
 static PyObject * qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Global_Phase(qgd_N_Qubit_Decomposition_adaptive_Wrapper *self, PyObject *args) {
 	double new_global_phase;
     if (!PyArg_ParseTuple(args, "|d", &new_global_phase )) return Py_BuildValue("i", -1);
-    self->decomp_base->set_global_phase(new_global_phase);
+    try{
+    	self->decomp_base->set_global_phase(new_global_phase);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     return Py_BuildValue("i", 0);
     
 }
@@ -672,7 +732,18 @@ static PyObject * qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Global_Phase(qg
 static PyObject * qgd_N_Qubit_Decomposition_adaptive_Wrapper_apply_Global_Phase_Factor(qgd_N_Qubit_Decomposition_adaptive_Wrapper *self ) {
 
     // get the number of gates
-    self->decomp_base->apply_global_phase_factor();
+    try{
+    	self->decomp_base->apply_global_phase_factor();
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     return Py_BuildValue("i", 0);
     
 }
@@ -683,8 +754,18 @@ static PyObject * qgd_N_Qubit_Decomposition_adaptive_Wrapper_apply_Global_Phase_
 */
 static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_List_Gates( qgd_N_Qubit_Decomposition_adaptive_Wrapper *self ) {
-
-    self->decomp_base->list_gates( 0 );
+    try{
+    	self->decomp_base->list_gates(0);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_None;
 }
@@ -699,12 +780,33 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_List_Gates( qgd_N_Qubit_Decomposition
 static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_Optimized_Parameters( qgd_N_Qubit_Decomposition_adaptive_Wrapper *self ) {
 
-    int parameter_num = self->decomp->get_parameter_num();
-
+    int parameter_num;
+    try{
+    	parameter_num = self->decomp->get_parameter_num();
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     matrix_base<double> parameters_mtx(1, parameter_num);
     double* parameters = parameters_mtx.get_data();
-    self->decomp_base->get_optimized_parameters(parameters);
-
+    try{
+	    self->decomp_base->get_optimized_parameters(parameters);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     // reversing the order
     Matrix_real parameters_mtx_reversed(1, parameter_num);
     double* parameters_reversed = parameters_mtx_reversed.get_data();
@@ -759,8 +861,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Optimized_Parameters( qgd_N_Qubit
         parameters_reversed[idx] = parameters[param_num-1-idx];
     }
 
-    self->decomp_base->set_optimized_parameters(parameters_reversed, param_num);
-
+	try{
+    	self->decomp_base->set_optimized_parameters(parameters_reversed, param_num);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     Py_DECREF(parameters_arr);
 
@@ -807,8 +919,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Max_Layer_Num(qgd_N_Qubit_Decompo
         int key_int = (int) PyLong_AsLong(key);
 
         // set maximal layer nums on the C++ side
-        self->decomp_base->set_max_layer_num( key_int, value_int );
-
+        try{
+        	self->decomp_base->set_max_layer_num( key_int, value_int );
+		}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
 
     return Py_BuildValue("i", 0);
@@ -857,8 +979,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Iteration_Loops(qgd_N_Qubit_Decom
         int key_int = (int) PyLong_AsLong(key);
 
         // set maximal layer nums on the C++ side
-        self->decomp_base->set_iteration_loops( key_int, value_int );
-
+        try{
+        	self->decomp_base->set_iteration_loops( key_int, value_int );
+		}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
 
     return Py_BuildValue("i", 0);
@@ -883,8 +1015,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Verbose(qgd_N_Qubit_Decomposition
 
 
     // set maximal layer nums on the C++ side
-    self->decomp_base->set_verbose( verbose );
-
+    try{
+    	self->decomp_base->set_verbose( verbose );
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_BuildValue("i", 0);
 }
@@ -919,8 +1061,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Debugfile(qgd_N_Qubit_Decompositi
     std::string debugfile_Cpp(debugfile_C, string_length);
 
      // set the name of the debugfile on the C++ side
-    self->decomp_base->set_debugfile( debugfile_Cpp );
-
+    try{
+    	self->decomp_base->set_debugfile( debugfile_Cpp );
+	}	
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_BuildValue("s", NULL);
 }
@@ -944,8 +1096,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Optimization_Tolerance(qgd_N_Qubi
 
 
     // set maximal layer nums on the C++ side
-    self->decomp_base->set_optimization_tolerance( tolerance );
-
+    try{
+    	self->decomp_base->set_optimization_tolerance( tolerance );
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_BuildValue("i", 0);
 }
@@ -969,8 +1131,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Convergence_Threshold(qgd_N_Qubit
 
 
     // set maximal layer nums on the C++ side
-    self->decomp->set_convergence_threshold( threshold );
-
+    try{
+    	self->decomp->set_convergence_threshold( threshold );
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     return Py_BuildValue("i", 0);
 }
 
@@ -992,8 +1164,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Optimization_Blocks(qgd_N_Qubit_D
 
 
     // set maximal layer nums on the C++ side
-    self->decomp_base->set_optimization_blocks( optimization_block );
-
+    try{
+    	self->decomp_base->set_optimization_blocks( optimization_block );
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     return Py_BuildValue("i", 0);
 }
@@ -1021,10 +1203,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Gate_Structure( qgd_N_Qubit_Decom
     qgd_Gates_Block* qgd_op_block = (qgd_Gates_Block*) gate_structure_py;
 
     if (  self->decomp != NULL ) {
-        self->decomp->set_adaptive_gate_structure( qgd_op_block->gate );
+    	try{
+        	self->decomp->set_adaptive_gate_structure( qgd_op_block->gate );
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
-        self->decomp_general->set_adaptive_gate_structure( qgd_op_block->gate );
+        try{
+        	self->decomp_general->set_adaptive_gate_structure( qgd_op_block->gate );
+		}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
@@ -1059,10 +1263,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_add_Gate_Structure_From_Binary( qgd_N
     std::string filename_str( filename_C );
 
     if (  self->decomp != NULL ) {
-        self->decomp->add_adaptive_gate_structure( filename_str );
+    	try{
+        	self->decomp->add_adaptive_gate_structure( filename_str );
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
-        self->decomp_general->add_adaptive_gate_structure( filename_str );
+    	try{
+        	self->decomp_general->add_adaptive_gate_structure( filename_str );
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
@@ -1095,10 +1321,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Gate_Structure_From_Binary( qgd_N
     std::string filename_str( filename_C );
 
     if (  self->decomp != NULL ) {
-        self->decomp->set_adaptive_gate_structure( filename_str );
+    	try{
+        	self->decomp->set_adaptive_gate_structure( filename_str );
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
-        self->decomp_general->set_adaptive_gate_structure( filename_str );
+    	try{
+        	self->decomp_general->set_adaptive_gate_structure( filename_str );
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
@@ -1122,10 +1370,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Unitary_From_Binary(qgd_N_Qubit_D
     std::string filename_str( filename_C );
     
     if (  self->decomp != NULL ) {
+    	try{
         self->decomp->set_unitary_from_file( filename_str );
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
+    	try{
         self->decomp_general->set_unitary_from_file( filename_str );
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
 
     return Py_BuildValue("i", 0);
@@ -1139,10 +1409,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_apply_Imported_Gate_Structure( qgd_N_
 
 
     if (  self->decomp != NULL ) {
-        self->decomp->apply_imported_gate_structure();
+    	try{
+        	self->decomp->apply_imported_gate_structure();
+        }
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
+        try{
         self->decomp_general->apply_imported_gate_structure();
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
@@ -1160,8 +1452,19 @@ static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_Project_Name( qgd_N_Qubit_Decomposition_adaptive_Wrapper *self) {
 
 
-    std::string project_name = self->decomp->get_project_name();
-    
+    std::string project_name;
+    try{
+    	project_name = self->decomp->get_project_name();
+    }
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
     // convert to python string
     PyObject* project_name_pyhton = PyUnicode_FromString(project_name.c_str());
 
@@ -1187,8 +1490,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Project_Name( qgd_N_Qubit_Decompo
     std::string project_name_new_str = ( project_name_new_C );
     
     // convert to python string
-    self->decomp->set_project_name(project_name_new_str);
-
+    try{
+    	self->decomp->set_project_name(project_name_new_str);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
    return Py_BuildValue("i", 0);
 }
 
@@ -1211,8 +1524,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_export_Unitary( qgd_N_Qubit_Decomposi
     std::string filename_str = ( filename_C );
 
     // convert to python string
+    try{
     self->decomp->export_unitary(filename_str);
-
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
    return Py_BuildValue("i", 0);
 }
 
@@ -1224,8 +1547,7 @@ static PyObject *
 qgd_N_Qubit_Decomposition_adaptive_Wrapper_get_Unitary( qgd_N_Qubit_Decomposition_adaptive_Wrapper *self) {
 
 
-    Matrix&& Unitary_mtx = self->decomp->get_Umtx().copy();
-    
+    Matrix&&  Unitary_mtx = self->decomp->get_Umtx().copy();
     // convert to numpy array
     Unitary_mtx.set_owner(false);
     PyObject *Unitary_py = matrix_to_numpy( Unitary_mtx );
@@ -1265,9 +1587,19 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Unitary( qgd_N_Qubit_Decompositio
 
 	// create QGD version of the Umtx
 	Matrix Umtx_mtx = numpy2matrix(self->Umtx);
+	try{
         self->decomp->set_unitary(Umtx_mtx);
-
-        return Py_BuildValue("i", 0);
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    return Py_BuildValue("i", 0);
 }
 
 /**
@@ -1317,8 +1649,18 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_Reorder_Qubits(qgd_N_Qubit_Decomposit
 
 
     // reorder the qubits in the decomposition class
-    self->decomp_base->reorder_qubits( qbit_list_C );
-
+    try{
+    	self->decomp_base->reorder_qubits( qbit_list_C );
+	}
+	catch (std::string err ) {
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
+    catch(...) {
+        std::string err( "Invalid pointer to decomposition class");
+        PyErr_SetString(PyExc_Exception, err.c_str());
+        return NULL;
+    }
 
     
 
@@ -1338,10 +1680,32 @@ qgd_N_Qubit_Decomposition_adaptive_Wrapper_add_Layer_To_Imported_Gate_Structure(
 
 
     if (  self->decomp != NULL ) {
-        self->decomp->add_layer_to_imported_gate_structure();
+        try{
+        	self->decomp->add_layer_to_imported_gate_structure();
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
-        self->decomp_general->add_layer_to_imported_gate_structure();
+        try{
+        	self->decomp_general->add_layer_to_imported_gate_structure();
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
@@ -1368,10 +1732,32 @@ static PyObject * qgd_N_Qubit_Decomposition_adaptive_Wrapper_set_Randomized_Radi
 
 
     if (  self->decomp != NULL ) {
-        self->decomp->set_randomized_radius( radius );
+        try{
+        	self->decomp->set_randomized_radius( radius );
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else if(  self->decomp_general != NULL ) {
-        self->decomp_general->set_randomized_radius( radius );
+        try{
+        	self->decomp_general->set_randomized_radius( radius );
+    	}
+		catch (std::string err ) {
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
+		catch(...) {
+		    std::string err( "Invalid pointer to decomposition class");
+		    PyErr_SetString(PyExc_Exception, err.c_str());
+		    return NULL;
+		}
     }
     else {
         return Py_BuildValue("i", 1);
