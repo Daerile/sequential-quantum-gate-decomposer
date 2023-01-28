@@ -54,10 +54,13 @@ def create_randomized_parameters( qbit_num, num_of_parameters, real=False ):
     return parameters, nontrivial_adaptive_layers
 
 def perf_collection():
+    import timeit
+    objs = [] #avoid destructor calls by storing in a list
     for qbit_num in range(5, 10):
         matrix_size = 1 << qbit_num
         # creating a class to decompose the unitary
         cDecompose = qgd_N_Qubit_Decomposition_adaptive( np.eye(matrix_size), level_limit_max=levels, level_limit_min=0 )
+        objs.append(cDecompose)
         # adding decomposing layers to the gat structure
         for idx in range(levels):
             cDecompose.add_Adaptive_Layers()
@@ -68,10 +71,16 @@ def perf_collection():
         num_of_parameters = cDecompose.get_Parameter_Num()
         
         # create randomized parameters
-        parameters, nontrivial_adaptive_layers = create_randomized_parameters( qbit_num, num_of_parameters, real=real )
-        f0, grad = cDecompose.Optimization_Problem_Combined( parameters, True )
-        print(f0, grad)
-        f0, grad = cDecompose.Optimization_Problem_Combined( parameters, False )
-        print(f0, grad)
+        result = [None]
+        def cpuInvoke():
+            result[0] = cDecompose.Optimization_Problem_Combined( parameters, True )
+        parameters, nontrivial_adaptive_layers = create_randomized_parameters( qbit_num, num_of_parameters, real=real )            
+        t = timeit.timeit(cpuInvoke, number=1)
+        print(t, result[0])
+        result = [None]
+        def dfeInvoke():
+            result[0] = cDecompose.Optimization_Problem_Combined( parameters, False )
+        t = timeit.timeit(dfeInvoke, number=1)
+        print(t, result[0])
     
 perf_collection()
