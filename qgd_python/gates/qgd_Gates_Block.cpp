@@ -700,6 +700,72 @@ qgd_Gates_Block_get_Matrix( qgd_Gates_Block *self, PyObject *args ) {
 }
 
 
+
+
+/**
+@brief Extract the optimized parameters
+@param start_index The index of the first inverse gate
+*/
+static PyObject *
+qgd_Gates_Block_Apply_To( qgd_Gates_Block *self, PyObject *args ) {
+
+    PyObject * parameters_arr = NULL;
+    PyObject * unitary_arg = NULL;
+
+    // parsing input arguments
+    if (!PyArg_ParseTuple(args, "|OO", &parameters_arr, &unitary_arg )) 
+        return Py_BuildValue("i", -1);
+    
+    if ( PyArray_IS_C_CONTIGUOUS(parameters_arr) ) {
+        Py_INCREF(parameters_arr);
+    }
+    else {
+        parameters_arr = PyArray_FROM_OTF(parameters_arr, NPY_DOUBLE, NPY_ARRAY_IN_ARRAY);
+    }
+
+    // get the C++ wrapper around the data
+    Matrix_real&& parameters_mtx = numpy2matrix_real( parameters_arr );
+
+    // convert python object array to numpy C API array
+    if ( unitary_arg == NULL ) {
+        PyErr_SetString(PyExc_Exception, "Input matrix was not given");
+        return NULL;
+    }
+
+    PyObject* unitary = PyArray_FROM_OTF(unitary_arg, NPY_COMPLEX128, NPY_ARRAY_IN_ARRAY);
+
+    // test C-style contiguous memory allocation of the array
+    if ( !PyArray_IS_C_CONTIGUOUS(unitary) ) {
+        PyErr_SetString(PyExc_Exception, "input mtrix is not memory contiguous");
+        return NULL;
+    }
+
+    // create QGD version of the input matrix
+    Matrix unitary_mtx = numpy2matrix(unitary);
+
+    self->gate->apply_to( parameters_mtx, unitary_mtx );
+    
+    Py_DECREF(parameters_arr);
+    Py_DECREF(unitary);
+
+    return Py_BuildValue("i", 0);
+
+}
+
+
+/**
+@brief Get the number of free parameters in the gate structure used for the decomposition
+*/
+static PyObject *
+qgd_Gates_Block_get_Parameter_Num( qgd_Gates_Block *self ) {
+
+    int parameter_num = self->gate->get_parameter_num();
+
+    return Py_BuildValue("i", parameter_num);
+}
+
+
+
 static PyMethodDef qgd_Gates_Block_Methods[] = {
     {"add_U3", (PyCFunction) qgd_Gates_Block_add_U3, METH_VARARGS | METH_KEYWORDS,
      "Call to add a U3 gate to the front of the gate structure"
@@ -753,6 +819,12 @@ static PyMethodDef qgd_Gates_Block_Methods[] = {
 #endif
     {"get_Matrix", (PyCFunction) qgd_Gates_Block_get_Matrix, METH_VARARGS,
      "Method to get the matrix of the operation."
+    },
+    {"Apply_To", (PyCFunction) qgd_Gates_Block_Apply_To, METH_VARARGS,
+     "Method to apply the circuit to an input."
+    },
+    {"get_Parameter_Num", (PyCFunction) qgd_Gates_Block_get_Parameter_Num, METH_NOARGS,
+     "Call to get the number of free parameters in the gate structure used for the decomposition"
     },
     {NULL}  /* Sentinel */
 };
@@ -846,6 +918,9 @@ static PyModuleDef qgd_Gates_Block_Module = {
 PyMODINIT_FUNC
 PyInit_qgd_Gates_Block(void)
 {
+    // initialize Numpy API
+    import_array();
+
     PyObject *m;
     if (PyType_Ready(&qgd_Gates_Block_Type) < 0)
         return NULL;
