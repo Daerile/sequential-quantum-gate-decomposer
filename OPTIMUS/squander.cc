@@ -28,15 +28,25 @@ void    init(QJsonObject data)
     printf("init\n");
     if (decomp == NULL) {
         int qbit_num, accelerator_num = 0, level_limit=5, level_limit_min=5;
-        system("python ../../sequential-quantum-gate-decomposer/saveunitary.py ../../sequential-quantum-gate-decomposer/examples/vqe/19CNOT.qasm ./unitary.binary");
-        std::string filename("unitary.binary");
+        std::string qasm = "4gt10-v1_81";
+        //system("python ../../sequential-quantum-gate-decomposer/saveunitary.py ../../sequential-quantum-gate-decomposer/examples/vqe/19CNOT.qasm ./unitary.binary");
+        //5 qbit: one-two-three-v2_100, 4gt10-v1_81, one_two_three-v1_99, one_two_three-v0_98, 4mod7-v1_96, aj_e11_165, alu-v2_32
+        //9 qbit: con1_216
+        //10 qbit: rd73_140
+        system((std::string("python ../../sequential-quantum-gate-decomposer/saveunitary.py ../../ibm_qx_mapping/examples/") + qasm + ".qasm ./" + qasm + ".binary").c_str());        
+        std::string filename = qasm + ".binary";
         Matrix Umtx = Decomposition_Base().import_unitary_from_binary(filename);
         qbit_num = log2(Umtx.rows);
         //Matrix Umtx = create_identity( 1 << qbit_num);
         decomp = new N_Qubit_Decomposition_adaptive( Umtx, qbit_num, level_limit, level_limit_min, accelerator_num );
-        Matrix_real optimized_parameters_mtx_loc;
-        Gates_block* gate_structure_loc = decomp->determine_initial_gate_structure(optimized_parameters_mtx_loc);
-        decomp->combine( gate_structure_loc );
+        //Matrix_real optimized_parameters_mtx_loc;
+        //Gates_block* gate_structure_loc = decomp->determine_initial_gate_structure(optimized_parameters_mtx_loc);
+        //decomp->combine( gate_structure_loc );
+        for (int idx=0; idx<level_limit; idx++ ) {
+              decomp->add_adaptive_layers();  
+        }
+        decomp->add_finalyzing_layer();
+
     }
 }
 
