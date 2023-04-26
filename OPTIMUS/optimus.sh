@@ -19,6 +19,6 @@ make check
 sudo make install
 git clone https://github.com/itsoulos/OPTIMUS.git
 export OPTIMUSPATH=/home/morse/squander/OPTIMUS/
-export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$OPTIMUSPATH/lib/:$OPTIMUSPATH/PROBLEMS/
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$OPTIMUSPATH/lib/:$OPTIMUSPATH/PROBLEMS/:/home/morse/squander/sequential-quantum-gate-decomposer/qgd_python/
 cd $OPTIMUSPATH
 ./compile.sh
