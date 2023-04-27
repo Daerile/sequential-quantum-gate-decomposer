@@ -3,6 +3,7 @@
 # include <vector>
 # include <stdio.h>
 # include <iostream>
+# include <QJsonDocument>
 # include <QJsonObject>
 # include <QFile>
 # include <QTextStream>
@@ -12,7 +13,6 @@
 #include "Decomposition_Base.h"
 #include "matrix_real.h"
 #include <math.h>
-#include <sys/syscall.h>
 
 //../bin/OptimusApp --filename=libsquander.so --opt_method=Pso --pso_particles=100 --pso_generations=10
 
@@ -21,19 +21,19 @@ using namespace std;
 extern "C"
 {
 N_Qubit_Decomposition_adaptive* decomp = NULL;
-
+vector<double> min_params;
+double cur_min;
 
 void    init(QJsonObject data)
 {
-    printf("init\n");
+    //printf("%s\n", QJsonDocument(data).toJson(QJsonDocument::Compact).toStdString().c_str());
     if (decomp == NULL) {
-        int qbit_num, accelerator_num = 0, level_limit=5, level_limit_min=5;
-        std::string qasm = "4gt10-v1_81";
-        //system("python ../../sequential-quantum-gate-decomposer/saveunitary.py ../../sequential-quantum-gate-decomposer/examples/vqe/19CNOT.qasm ./unitary.binary");
-        //5 qbit: one-two-three-v2_100, 4gt10-v1_81, one_two_three-v1_99, one_two_three-v0_98, 4mod7-v1_96, aj_e11_165, alu-v2_32
-        //9 qbit: con1_216
-        //10 qbit: rd73_140
-        system((std::string("python ../../sequential-quantum-gate-decomposer/saveunitary.py ../../ibm_qx_mapping/examples/") + qasm + ".qasm ./" + qasm + ".binary").c_str());        
+        string folder = data.take("folder").toString().toStdString();
+        string qasm = data.take("qasm").toString().toStdString();        
+        int qbit_num, accelerator_num = 0, level_limit=data.take("levels").toString().toInt(), level_limit_min=3;
+        if (system((std::string("python ../../sequential-quantum-gate-decomposer/saveunitary.py ") + folder + qasm + ".qasm ./" + qasm + ".binary").c_str()) != 0) {
+            exit(-1);
+        }        
         std::string filename = qasm + ".binary";
         Matrix Umtx = Decomposition_Base().import_unitary_from_binary(filename);
         qbit_num = log2(Umtx.rows);
@@ -46,7 +46,8 @@ void    init(QJsonObject data)
               decomp->add_adaptive_layers();  
         }
         decomp->add_finalyzing_layer();
-
+        min_params.resize(decomp->get_parameter_num());
+        cur_min = 1.0;
     }
 }
 
@@ -83,6 +84,13 @@ void    granal(vector<double> &x,vector<double> &g)
 
 QJsonObject    done(vector<double> &x)
 {
+   double min = decomp->optimization_problem(x.data());
+   if (min < cur_min) {
+       cur_min = min;
+       min_params.clear();
+       copy(x.begin(), x.end(), back_inserter(min_params));
+       printf("New Min: %f\n", cur_min);
+   }
     //printf("done\n");
     /*
     delete decomp;
