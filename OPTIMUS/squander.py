@@ -14,6 +14,6 @@ for opt_method in ["Bfgs", "Pso", "Genetic", "Multistart", "iPso", "Price", "gen
         ret[0] = os.system("hwloc-bind --membind node:0 --cpubind node:0 -- ../bin/OptimusApp --filename=libsquander.so --opt_method=" +
             opt_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ">>" + qasm + ".out")
     t = timeit.timeit(runfunc, number=1)
-    if ret[0] != 0: break
+    if ret[0] != 0: print("Error", ret[0]); break
     os.system("echo Total Time " + opt_method + ": " + str(t) + ">>" + qasm + ".out")
     os.system("tail -n 5 " + qasm + ".out") 
