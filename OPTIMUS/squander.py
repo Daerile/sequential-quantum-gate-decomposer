@@ -4,14 +4,16 @@ import timeit, os
 #9 qbit: con1_216
 #10 qbit: rd73_140
 folder = '../../ibm_qx_mapping/examples/'
-qasm = '4gt10-v1_81' #'3_17_13'
+qasm = 'one-two-three-v2_100' #'4gt10-v1_81' #'3_17_13'
+numa = 1
 levels = 5
 if os.path.exists(qasm + ".out"): os.remove(qasm + ".out")
 for opt_method in ["NeuralMinimizer", "Bfgs", "Pso", "Genetic", "Multistart", "iPso", "Price", "gende", "de", "Tmlsl", "gcrs",
     "IntegerGenetic", "ParallelGenetic", "DoubleGenetic", "ParallelDe", "parallelPso"]:
+    print("Running: " + opt_method + " on " + qasm)
     ret = [None]
     def runfunc():
-        ret[0] = os.system("hwloc-bind --membind node:0 --cpubind node:0 -- ../bin/OptimusApp --filename=libsquander.so --opt_method=" +
+        ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- ../bin/OptimusApp --filename=libsquander.so --opt_method=" +
             opt_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ">>" + qasm + ".out")
     t = timeit.timeit(runfunc, number=1)
     if ret[0] != 0 and ret[0] != 34304:
