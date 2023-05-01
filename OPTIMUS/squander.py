@@ -4,21 +4,24 @@ import timeit, os
 #9 qbit: con1_216
 #10 qbit: rd73_140
 folder = '../../ibm_qx_mapping/examples/'
-qasm = 'one-two-three-v2_100' #'4gt10-v1_81' #'3_17_13'
-numa = 1
-levels = 5
+qasm = '4gt10-v1_81' #'rd73_140' #'con1_216' #'one-two-three-v2_100' #'3_17_13'
+numa = 0 #1
+levels = 1 #2
 if os.path.exists(qasm + ".out"): os.remove(qasm + ".out")
-for opt_method in ["NeuralMinimizer", "Bfgs", "Pso", "Genetic", "Multistart", "iPso", "Price", "gende", "de", "Tmlsl", "gcrs",
-    "IntegerGenetic", "ParallelGenetic", "DoubleGenetic", "ParallelDe", "parallelPso"]:
+for opt_method in ["Genetic"]: #["NeuralMinimizer", "Bfgs", "de", "ParallelDe", "Pso", "parallelPso", "DoubleGenetic", "Genetic", "IntegerGenetic", 
+    #"gende", "Multistart", "iPso", "ParallelGenetic", "gcrs", "Price", "Tmlsl"]:
     print("Running: " + opt_method + " on " + qasm)
+    cntnue = True
     ret = [None]
+    cmd = ("../bin/OptimusApp --filename=libsquander.so --opt_method=" +
+            opt_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ("" if not cntnue else " --continue=0"))
+    print(cmd)
     def runfunc():
-        ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- ../bin/OptimusApp --filename=libsquander.so --opt_method=" +
-            opt_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ">>" + qasm + ".out")
+        ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- " + cmd + ">>" + qasm + ".out")
     t = timeit.timeit(runfunc, number=1)
-    if ret[0] != 0 and ret[0] != 34304:
+    if ret[0] != 0:
         print("Error", ret[0]);
-        if ret[0] != 34304: continue #34304 is bad alloc on NeuralMinimizer for large # of parameters
+        if ret[0] == 34304: continue #34304 is bad alloc on NeuralMinimizer for large # of parameters
         break
     os.system("echo Total Time " + opt_method + ": " + str(t) + ">>" + qasm + ".out")
     os.system("tail -n 5 " + qasm + ".out") 
