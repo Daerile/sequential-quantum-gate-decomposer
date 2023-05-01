@@ -24,6 +24,7 @@ extern "C"
 N_Qubit_Decomposition_adaptive* decomp = NULL;
 double cur_min;
 string qasm;
+int cntnue = 0;
 
 void    init(QJsonObject data)
 {
@@ -40,11 +41,22 @@ void    init(QJsonObject data)
         qbit_num = log2(Umtx.rows);
         //Matrix Umtx = create_identity( 1 << qbit_num);
         decomp = new N_Qubit_Decomposition_adaptive( Umtx, qbit_num, level_limit, level_limit_min, accelerator_num );
-        //Matrix_real optimized_parameters_mtx_loc;
-        //Gates_block* gate_structure_loc = decomp->determine_initial_gate_structure(optimized_parameters_mtx_loc);
-        //decomp->combine( gate_structure_loc );
-        for (int idx=0; idx<level_limit; idx++ ) {
-              decomp->add_adaptive_layers();  
+        if (data.contains("continue")) {
+            cntnue = 1;
+            Matrix_real parameters_mtx;
+            decomp->combine(import_gate_list_from_binary(parameters_mtx, qasm + ".gates"));
+            Matrix Umtx_new = decomp->get_transformed_matrix( parameters_mtx, decomp->get_gates().begin(), decomp->get_gates().size(), Umtx );
+            printf("%f %d %d\n", decomp->optimization_problem(parameters_mtx), parameters_mtx.size(), decomp->get_gates().size());
+            delete decomp;
+            decomp = new N_Qubit_Decomposition_adaptive( Umtx_new, qbit_num, level_limit, level_limit_min, accelerator_num );
+            decomp->add_adaptive_layers();
+        } else {
+            //Matrix_real optimized_parameters_mtx_loc;
+            //Gates_block* gate_structure_loc = decomp->determine_initial_gate_structure(optimized_parameters_mtx_loc);
+            //decomp->combine( gate_structure_loc );
+            for (int idx=0; idx<level_limit; idx++ ) {
+                  decomp->add_adaptive_layers();
+            }
         }
         decomp->add_finalyzing_layer();
         cur_min = 1.0;
@@ -88,8 +100,21 @@ QJsonObject    done(vector<double> &x)
    if (min < cur_min) { //the done function should be single-threaded and hence thread-safe
        cur_min = min;
        //printf("New Min: %f\n", cur_min);
-       Matrix_real parameters_mtx(x.data(), 1, x.size());
-       export_gate_list_to_binary(parameters_mtx, decomp, qasm + ".gates");
+       if (cntnue) {
+            //decomp->add_adaptive_gate_structure(qasm + ".gates");
+            Matrix_real parameters_mtx;
+            Gates_block* gb = import_gate_list_from_binary(parameters_mtx, qasm + ".gates");
+            printf("%d %d %d\n", parameters_mtx.size(), gb->get_gates().size(), x.size());
+            Matrix_real combine_parameters_mtx(1, parameters_mtx.size() + x.size());
+            memcpy(combine_parameters_mtx.get_data(), parameters_mtx.get_data(), parameters_mtx.size() * sizeof(double));
+            memcpy(combine_parameters_mtx.get_data() + parameters_mtx.size(), x.data(), x.size() * sizeof(double)); 
+            gb->combine(decomp);
+            printf("%d %d\n", combine_parameters_mtx.size(), gb->get_gates().size());
+            export_gate_list_to_binary(combine_parameters_mtx, gb, qasm + ".next.gates");
+       } else {
+           Matrix_real parameters_mtx(x.data(), 1, x.size());
+           export_gate_list_to_binary(parameters_mtx, decomp, qasm + ".next.gates");
+       }
    }
     //printf("done\n");
     /*
