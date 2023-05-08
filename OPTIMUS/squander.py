@@ -30,46 +30,48 @@ opt_methods = ["NeuralMinimizer", "Bfgs", "de", "ParallelDe", "Pso", "parallelPs
     "gende", "Multistart", "iPso", "ParallelGenetic", "gcrs", "Price", "Tmlsl"]
 num_qbits = 3
 results = {x: {} for x in testdata}
-for qasm in (x.replace(".qasm", "") for x in testdata[num_qbits]):
-    if os.path.exists(qasm + ".out"): os.remove(qasm + ".out")
-    for opt_method in ["NeuralMinimizer"]:
-        for local_search in local_searches:
-            for sample_method in sample_methods:
-                levels = num_qbits
-                #for part in ((levelguess,),):# partitions(5):
-                #    for path in {x for x in itertools.permutations(part)}:
-                #    print("Path: " + str(path)) 
-                cntnue = False
-                #    for levels in path:
-                while True:            
-                    print("Running: " + opt_method + " on " + qasm + " with " + str(levels) + " levels")
-                    ret = [None]
-                    cmd = ("../bin/OptimusApp --filename=libsquander.so --opt_method=" +
-                            opt_method + " --localsearch_method=" + local_search + " --bfgs_iterations=2001 --iterations=30" + " --neural_model=neural" + " --neural_trainmethod=lbfgs" + " --sample_method=" + sample_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ("" if not cntnue else " --continue=0"))
-                    print(cmd)
-                    def runfunc():
-                        ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- " + cmd + ">>" + qasm + ".out")
-                    t = timeit.timeit(runfunc, number=1)
-                    if ret[0] != 0:
-                        print("Error", ret[0]);
-                        if ret[0] == 34304: continue #34304 is bad alloc on NeuralMinimizer for large # of parameters
-                        break
-                    os.system("echo Total Time " + opt_method + ": " + str(t) + ">>" + qasm + ".out")
-                    os.system("tail -n 5 " + qasm + ".out")
-                    shutil.copyfile(qasm + ".next.gates", qasm + ".gates")
-                    import numpy as np
-                    from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
-                    cDecompose = qgd_N_Qubit_Decomposition_adaptive( np.eye(1<<num_qbits), level_limit_max=5, level_limit_min=0 )
-                    cDecompose.set_Unitary_From_Binary(qasm + ".binary")
-                    cDecompose.set_Gate_Structure_From_Binary(qasm + ".gates")
-                    cDecompose.apply_Imported_Gate_Structure()
-                    cost = 1.0-np.real(np.trace(cDecompose.get_Unitary())) / (1<<num_qbits)
-                    if cost < 1e-8:
-                        results[qasm] = (cost, t)
-                        levels -= 1
-                        if levels == 0: break
-                    else:
-                        if qasm in results: break #fail after success means we know the best level count
-                        levels += 1
-                    #print(cDecompose.Optimization_Problem(np.zeros(0)))
-                    #cntnue = True
+for num_qbits in (3, 4):
+    for qasm in (x.replace(".qasm", "") for x in testdata[num_qbits]):
+        if os.path.exists(qasm + ".out"): os.remove(qasm + ".out")
+        for opt_method in ["NeuralMinimizer"]:
+            for local_search in local_searches:
+                for sample_method in sample_methods:
+                    levels = num_qbits
+                    #for part in ((levelguess,),):# partitions(5):
+                    #    for path in {x for x in itertools.permutations(part)}:
+                    #    print("Path: " + str(path)) 
+                    cntnue = False
+                    #    for levels in path:
+                    while True:            
+                        print("Running: " + opt_method + " on " + qasm + " with " + str(levels) + " levels")
+                        ret = [None]
+                        cmd = ("../bin/OptimusApp --filename=libsquander.so --opt_method=" +
+                                opt_method + " --localsearch_method=" + local_search + " --bfgs_iterations=2001 --iterations=30" + " --neural_model=neural" + " --neural_trainmethod=lbfgs" + " --sample_method=" + sample_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ("" if not cntnue else " --continue=0"))
+                        print(cmd)
+                        def runfunc():
+                            ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- " + cmd + ">>" + qasm + ".out")
+                        t = timeit.timeit(runfunc, number=1)
+                        if ret[0] != 0:
+                            print("Error", ret[0]);
+                            if ret[0] == 34304: continue #34304 is bad alloc on NeuralMinimizer for large # of parameters
+                            break
+                        os.system("echo Total Time " + opt_method + ": " + str(t) + ">>" + qasm + ".out")
+                        os.system("tail -n 5 " + qasm + ".out")
+                        shutil.copyfile(qasm + ".next.gates", qasm + ".gates")
+                        import numpy as np
+                        from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
+                        cDecompose = qgd_N_Qubit_Decomposition_adaptive( np.eye(1<<num_qbits), level_limit_max=5, level_limit_min=0 )
+                        cDecompose.set_Unitary_From_Binary(qasm + ".binary")
+                        cDecompose.set_Gate_Structure_From_Binary(qasm + ".gates")
+                        cDecompose.apply_Imported_Gate_Structure()
+                        cost = 1.0-np.real(np.trace(cDecompose.get_Unitary())) / (1<<num_qbits)
+                        if cost < 1e-8:
+                            results[qasm] = (levels, cost, t)
+                            levels -= 1
+                            if levels == 0: break
+                        else:
+                            if qasm in results: break #fail after success means we know the best level count
+                            levels += 1
+                        #print(cDecompose.Optimization_Problem(np.zeros(0)))
+                        #cntnue = True
+        print(results)
