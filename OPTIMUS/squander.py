@@ -66,11 +66,11 @@ for num_qbits in (3, 4):
                         cDecompose.apply_Imported_Gate_Structure()
                         cost = 1.0-np.real(np.trace(cDecompose.get_Unitary())) / (1<<num_qbits)
                         if cost < 1e-8:
-                            results[qasm] = (levels, cost, t)
+                            results[num_qbits][qasm] = (levels, cost, t)
                             levels -= 1
                             if levels == 0: break
                         else:
-                            if qasm in results: break #fail after success means we know the best level count
+                            if qasm in results[num_qbits]: break #fail after success means we know the best level count
                             levels += 1
                         #print(cDecompose.Optimization_Problem(np.zeros(0)))
                         #cntnue = True
