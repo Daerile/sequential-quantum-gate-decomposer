@@ -467,45 +467,162 @@ def train_model(num_of_parameters, size):
     model.evaluate(x_test.view(np.float64).reshape(x_test.shape + (2,)), {'out' + str(i): y_test[:,i] for i in real_params})
     print(model.predict(x_test.view(np.float64).reshape(x_test.shape + (2,)))[:5], y_test[:5,real_params])
 def wolfe_conditions_line(f, xn, delta, oldmn, m): #compute learning rate by backtracking line search
-    c, tau, alpha, feval = 0.5, 0.5, [0.5], []
-    t = -c * m
+    c, tau, alpha, feval = 0.5, 0.5, [1.0], []
+    #assert m < 0
+    t = -c * m #t = max(0, -c * m)
     while True:
         ftry = f(xn + delta * alpha[-1])
+        #if len(feval) and feval[-1] == ftry: break
         feval.append(ftry)
-        #if oldmn - feval[-1] >= alpha[-1] * t or
-        if alpha[-1] < 1e-16: break
+        #if oldmn - feval[-1] > 0: break
+        if oldmn - feval[-1] >= alpha[-1] * t: break        
+        if alpha[-1] < 1e-10: break
         alpha.append(tau * alpha[-1])
-    #print(alpha, feval)
-    return min(enumerate(alpha), key=lambda x: feval[x[0]])[1]
+    #print(alpha, feval, oldmn, m, t, min(enumerate(alpha), key=lambda x: feval[x[0]])[1])
+    return min(enumerate(zip(alpha, feval)), key=lambda x: feval[x[0]])[1]
 def newton_method():
     from qiskit import QuantumCircuit, transpile
     from qgd_python.utils import get_unitary_from_qiskit_circuit
     import sys
-    filename = "/home/morse/ibm_qx_mapping/examples/4gt10-v1_81.qasm"
+    filename = "/home/morse/ibm_qx_mapping/examples/" + 'one-two-three-v0_98' + ".qasm" # + 'ham3_102' + ".qasm"
     qc_trial = QuantumCircuit.from_qasm_file( filename )
     qc_trial = transpile(qc_trial, optimization_level=3, basis_gates=['cz', 'cx', 'u3'], layout_method='sabre')
     Umtx_orig = get_unitary_from_qiskit_circuit( qc_trial )
     from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
     cDecompose = qgd_N_Qubit_Decomposition_adaptive( Umtx_orig.conj().T, level_limit_max=5, level_limit_min=0 )
+    cDecompose.set_Cost_Function_Variant(6)
     # adding decomposing layers to the gat structure
     for idx in range(levels):
         cDecompose.add_Adaptive_Layers()
     cDecompose.add_Finalyzing_Layer_To_Gate_Structure()
     # get the number of free parameters
+    batchsize = 100
     num_of_parameters = cDecompose.get_Parameter_Num()
-    lr = 1e-5
-    xn = np.random.random(num_of_parameters)*2*np.pi #np.ones(num_of_parameters, dtype=np.float64)*np.pi/2
+    lbda = 0.1
+    def sample():
+        return np.random.random(num_of_parameters)*2*np.pi #np.ones(num_of_parameters, dtype=np.float64)*np.pi/2
+    def fourier_coeffs_mc(f, domain, num_samples):
+        # f: function to be approximated
+        # k: list of tuples representing the frequencies for each dimension, e.g. [(1, 0), (0, 1)] for a 2D function with frequencies (1, 0) and (0, 1)
+        # domain: list of tuples representing the lower and upper bounds for each dimension, e.g. [(0, 1), (0, 1)] for a 2D function with domain [0, 1] x [0, 1]
+        # num_samples: number of random samples to generate
+        k = np.fft.fftfreq(num_samples, d=2*np.pi / num_samples)
+        d = len(domain)  # number of dimensions
+        c = np.zeros(len(k), dtype=np.complex128)  # initialize Fourier coefficients
+    
+        # generate random samples with importance weights
+        samples = np.zeros((num_samples, d))
+        weights = np.zeros(num_samples)
+        for i in range(num_samples):
+            x = [np.random.uniform(low=domain[j][0], high=domain[j][1]) for j in range(d)]
+            w = 1
+            for j in range(d):
+                w *= np.exp(1j * freq * x[j])
+                #w *= np.exp(-2 * (freq[0]**2 + freq[1]**2) / num_samples)  # importance weight
+            samples[i] = x
+            weights[i] = np.abs(w)
+    
+        # normalize weights
+        weights /= np.sum(weights)
+    
+        # evaluate function at each sample point
+        values = np.array([f(x) for x in samples])
+    
+        # compute Fourier coefficients for each frequency
+        for i, freq in enumerate(k):
+            # compute Fourier coefficient using Monte Carlo integration
+            c[i] = np.sum(values * np.exp(-1j * freq[0] * samples[:, 0]) * np.exp(-1j * freq[1] * samples[:, 1]) * weights) / num_samples    
+        return c
+    def fourier_series(coeffs, k, x):
+        # coeffs: list of Fourier coefficients for each frequency
+        # k: list of tuples representing the frequencies for each dimension, e.g. [(1, 0), (0, 1)] for a 2D function with frequencies (1, 0) and (0, 1)
+        # x: point at which to evaluate the Fourier series
+    
+        d = len(x)  # number of dimensions
+        result = 0
+    
+        # compute Fourier series by summing over all frequencies
+        for i, freq in enumerate(k):
+            # compute weight factor for this frequency
+            w = 1
+            for j in range(d):
+                w *= np.exp(1j * freq[j] * x[j])
+    
+            # add contribution of this frequency to the result
+            result += coeffs[i] * w
+    
+        return result        
+    xn = sample()
+    #batch = np.random.random((batchsize, num_of_parameters)) * 2 * np.pi
+    #print(cDecompose.Optimization_Problem_Batch(batch).shape)
     def f(xn):
-        mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
-        return costfunc(mat)
+        return cDecompose.Optimization_Problem(xn)
+        #mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
+        #print(cDecompose.Optimization_Problem(xn),costfunc(mat)) 
+        #return costfunc(mat)
+    def grad(xn):
+        return cDecompose.Optimization_Problem_Combined(xn)[1]
     def costfunc(mat):
-        return np.sum(np.square(np.real(mat-np.eye(mat.shape[1], dtype=np.float64))))+np.sum(np.square(np.imag(mat))) #1.0-np.real(np.trace(mat))/mat.shape[1]
+        #return np.sum(np.abs(mat-np.eye(mat.shape[1], dtype=mat.dtype)))
+        return np.sum(np.square((mat-np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64)))
+        #return 1.0-np.real(np.trace(mat))/mat.shape[1]
+    from scipy.optimize import least_squares
+    def fun(xn):
+        mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
+        #return np.real(mat - np.eye(mat.shape[1], dtype=mat.dtype)).flatten()
+        return (mat - np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64).flatten()
+    def jac(xn):
+        mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
+        #return np.real(np.stack(mat_deriv, -1)).reshape(mat.flatten().shape[0], num_of_parameters)
+        mat = mat.view(np.float64).flatten()
+        return np.stack(mat_deriv, -1).view(np.float64).reshape(mat.shape[0]//2, num_of_parameters, 2).transpose(0,2,1).reshape(mat.shape[0], num_of_parameters)
+    #print(fourier_coeffs_mc(f, [[0]*num_of_parameters, [2*np.pi]*num_of_parameters], 100))
+    def oneparammin(xn):
+        cDecompose.set_Cost_Function_Variant(0)
+        cost = cDecompose.Optimization_Problem(xn)
+        while True:
+            shift, costs = np.zeros((len(xn),)), np.zeros((len(xn),))
+            for d in range(len(xn)):
+                val = xn[d]
+                xn[d] += np.pi/2
+                c1 = cDecompose.Optimization_Problem(xn)
+                #f(x)=C+A*sin(x+phi) and f(x+PI/2)=C+A*cos(x+phi)
+                #(f(x)-C)/(f(x+PI/2)-C)=tan(x+phi)                
+                xn[d] += np.pi/2
+                c2 = cDecompose.Optimization_Problem(xn)
+                C = (cost+c2)/2
+                truephi = np.arctan2(cost-C, c1-C)               
+                truephi = (truephi-val) % (2 * np.pi) #sin(x+phi)=-1 3PI/2-phi
+                shift[d] = 3*np.pi/2-truephi
+                origsin = np.sin(val+truephi)
+                A = (cost - c2) / 2 / origsin
+                costs[d] = cost-A*(origsin+1)
+                #sin(x+y) = A sin(x+phi)cos(y) + A cos(x+phi)sin(y)
+                #f(x)=C+Asin(x+phi)
+                #f(x+PI)=C-Asin(x+phi)
+                #determine: f(x+y)=C+Asin(x+y+phi) or f(x+y)=C-A sin(x+y+phi)=-1  phi=3*PI/2-x-y
+                #f(x+PI/2) = C+Asin(x+PI/2 + phi) = C+Acos(x+phi)
+                #f(x+PI) = C+Asin(x+PI + phi) = C-Asin(x+phi)
+                #f(x+3PI/2)= C+Asin(x+3PI/2 + phi)= C-Acos(x+phi)
+                #print(cost, c1, c2, c3, costs[d])
+                xn[d] = val
+            minidx = min(enumerate(costs), key=lambda x: x[1])[0]
+            cost = costs[minidx]
+            xn[minidx] = shift[minidx]
+            print(cost) 
+        assert False 
+    #ret = least_squares(fun, xn, jac, (0, 2*np.pi), verbose=2)
+    #ret = least_squares(fun, xn, jac, method='lm', verbose=2)
+    #ret = least_squares(f, xn, grad, (0, 2*np.pi), verbose=2)
+    #ret = least_squares(fun, xn, jac, (0, 2*np.pi), verbose=2)
+    #print(f(ret.x)); assert False
+    oneparammin(xn)
     while True:
         mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
-        cost = costfunc(mat) #1.0-np.real(np.trace(mat))/mat.shape[1]
-        print("Cost: ", cost)
+        cost = costfunc(mat)
+        print("Cost: ", cost, 1.0-np.real(np.trace(mat))/mat.shape[1], lbda)
         if cost < 1e-8: break
-        mat = (np.eye(mat.shape[1], dtype=mat.dtype) - mat).view(np.float64).flatten()
+        mat = (mat - np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64).flatten()
         J = np.stack(mat_deriv, -1).view(np.float64).reshape(mat.shape[0]//2, num_of_parameters, 2).transpose(0,2,1).reshape(mat.shape[0], num_of_parameters)
         #squareidx = np.random.choice(J.shape[0], J.shape[1])
         #delta = np.linalg.solve(J[squareidx,:], -mat[squareidx])
@@ -514,9 +631,38 @@ def newton_method():
         #mat = (mat - np.eye(mat.shape[1], dtype=mat.dtype)).flatten()
         #mat = mat(np.eye(mat.shape[1], dtype=mat.dtype) - mat).flatten()
         #J = np.stack(mat_deriv, 2).reshape(mat.shape[0], num_of_parameters)
-        delta = np.linalg.solve(J.T @ J, -J.T @ mat)
-        lr = wolfe_conditions_line(f, xn, delta, cost, np.dot(np.array([costfunc(x) for x in mat_deriv]), delta))
-        xn = (xn + delta * lr)# % (2 * np.pi)
+        grad = J.T @ mat
+        genJ = J.T @ J
+        #damping = lbda*np.eye(num_of_parameters, dtype=J.dtype)
+        damping = lbda*np.diag(np.diag(genJ))
+        try:
+            delta = np.linalg.lstsq(genJ - damping, -grad, rcond=None)[0]
+            #delta = np.linalg.solve(genJ, -grad)
+        except np.linalg.LinAlgError:
+            print("Singular matrix", np.linalg.matrix_rank(J.T @ J), num_of_parameters)
+            delta = np.linalg.lstsq(genJ, -grad, rcond=None)[0]
+            #xn = np.random.random(num_of_parameters)*2*np.pi
+            #continue
+        drctn = np.dot(grad, delta)
+        lr, newc = wolfe_conditions_line(f, xn, delta, cost, drctn)
+        if drctn < 0 and newc < cost - 0.0001 and cost - newc >= -0.5 * drctn * lr:
+            xn = (xn + delta * lr)# % (2 * np.pi)
+            if lbda > 1e-7: lbda = lbda / 10
+        else:
+            oneparammin(xn)
+            #xn = np.random.random(num_of_parameters)*2*np.pi
+            #continue
+            """
+            while True:
+                amount = np.random.randint(num_of_parameters // 10, num_of_parameters // 5)
+                idxes = np.random.choice(num_of_parameters, amount)
+                mask = np.zeros(num_of_parameters); mask[idxes] = True
+                rand = np.zeros(num_of_parameters); rand[idxes] = np.random.random(amount)*2*np.pi
+                if True: #f(np.where(mask, rand, xn)) < cost:
+                    xn = np.where(mask, rand, xn)
+                    break
+            """
+            if lbda < 0.1: lbda = lbda * 10
         #xn = np.real(xn + np.linalg.solve(J.conjugate().T @ J, -J.conjugate().T @ mat)) % (2 * np.pi)      
         #Jplus = np.linalg.inv(J.conjugate().T @ J) @ J.conjugate().T
         #xn = xn - np.real(Jplus @ mat) % (2 * np.pi)
