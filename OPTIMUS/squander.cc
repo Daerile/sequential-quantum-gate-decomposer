@@ -7,6 +7,7 @@
 # include <QJsonObject>
 # include <QFile>
 # include <QTextStream>
+# include <QRandomGenerator>
 
 #include <gsl/gsl_vector.h>
 #include "N_Qubit_Decomposition_adaptive.h"
@@ -27,6 +28,7 @@ double cur_min;
 string qasm;
 mutex min_mutex;
 int cntnue = 0;
+QRandomGenerator randGen;
 
 void savemin(double min, vector<double> &x) {
    lock_guard<mutex> guard(min_mutex);
@@ -60,6 +62,8 @@ void    init(QJsonObject data)
 {
     //printf("%s\n", QJsonDocument(data).toJson(QJsonDocument::Compact).toStdString().c_str());
     if (decomp == NULL) {
+        int randomSeed = 1;
+        randGen.seed(randomSeed);
         string folder = data.take("folder").toString().toStdString();
         qasm = data.take("qasm").toString().toStdString();        
         int qbit_num, accelerator_num = 0, level_limit=data.take("levels").toString().toInt(), level_limit_min=1;
@@ -101,13 +105,27 @@ int	getdimension()
 void    getmargins(vector<Interval> &x)
 {
         for(size_t i=0;i<x.size();i++)
-                x[i]=Interval(0,2*M_PI);
+            //x[i]=Interval(0,2*M_PI);            
+            //x[i]=Interval(-INFINITY,INFINITY);
+            x[i]=Interval(-1e100,1e100);
 }
 
+void  getSample(vector<double> &x)
+{
+    for(size_t i=0;i<x.size();i++)
+        x[i]=randGen.generateDouble()*2*M_PI;
+}
 
 //f(x)
 double	funmin(vector<double> &x)
 {
+   for (size_t i = 0; i < x.size(); i++) {
+       if (x[i] < 0) {
+           x[i] = fmod(x[i], 2*M_PI) + 2*M_PI;
+       } else if (x[i] > 2 * M_PI) {
+           x[i] = fmod(x[i], 2*M_PI);
+       }
+   }
    double value = decomp->optimization_problem(x.data());
    if (value < cur_min) savemin(value, x);
    return value;
@@ -126,6 +144,7 @@ void    granal(vector<double> &x,vector<double> &g)
     }
     gsl_vector_free(grad_gsl);
 }
+
 
 QJsonObject    done(vector<double> &x)
 {
