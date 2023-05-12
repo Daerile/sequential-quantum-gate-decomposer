@@ -26,20 +26,20 @@ def partitions(n, I=1):
         for p in partitions(n-i, i):
             yield (i,) + p
 sample_methods = ["uniform"] #["uniform", "rbf", "mlp", "maxwell", "triangular", "nnc"] #only neural minimizer uses sampling methods
-local_searches = ["adam"] #["bfgs", "psoLocal", "simplex", "gradient", "adam", "lbfgs", "gslbfgs", "grs", "random", "nelderMead", "hill"]
+local_searches = ["bfgs"] #["bfgs", "psoLocal", "simplex", "gradient", "adam", "lbfgs", "gslbfgs", "grs", "random", "nelderMead", "hill"]
 opt_methods = ["NeuralMinimizer", "Bfgs", "de", "ParallelDe", "Pso", "parallelPso", "DoubleGenetic", "Genetic", "IntegerGenetic", 
     "gende", "Multistart", "iPso", "ParallelGenetic", "gcrs", "Price", "Tmlsl"]
-num_qbits = 3
 use_squander = False
 #results = {x: {} for x in testdata}
 if use_squander:
     results = {3: {'ham3_102': (3, 4.496376604379293e-10, 11.611603129887953), '3_17_13': (3, 2.4348700833343173e-10, 12.103998687118292), 'ex-1_166': (3, 7.1601424789236034e-09, 7.595035461941734), 'miller_11': (3, 4.4637382679013626e-10, 15.195476897992194)}, 4: {'decod24-v0_38': (3, 5.448974604860268e-13, 22.738686876138672), 'rd32-v0_66': (2, 2.069759919010039e-10, 10.218776091001928), 'decod24-v2_43': (4, 1.0951350937205007e-11, 68.7201279271394), 'rd32-v1_68': (2, 3.2307490016592055e-14, 10.963908253004774)}, 5: {}, 6: {}, 7: {}, 8: {}, 9: {}, 10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}}
 else: #NeuralMinimizer
-    results = {3: {'ham3_102': (2, 5.487906906687101e-09, 26.668307663174346), '3_17_13': (3, 8.748746505027327e-09, 1.6907278751023114), 'ex-1_166': (3, 7.520237099711835e-09, 1.2516490330453962), 'miller_11': (3, 4.50146386832273e-09, 14.192241134122014)}, 4: {'decod24-v0_38': (2, 7.084205444485292e-09, 84.25802736007608), 'rd32-v0_66': (2, 4.143922094357322e-09, 10.16023734700866), 'decod24-v2_43': (2, 7.303407212333468e-09, 29.003465383080766), 'rd32-v1_68': (2, 5.156767901581816e-09, 11.690480364020914)}, 5: {'4gt13-v1_93': (3, 8.716013466525396e-09, 4.623484890908003), 'alu-v2_33': (3, 2.1432007279997833e-09, 7.497361100045964), 'alu-v2_32': (4, 9.513836829455613e-09, 252.66068387893029), 'mod5d2_64': (2, 9.064051065266199e-09, 20.493360723135993), 'hwb4_49': (4, 7.2158514718978495e-09, 121.33502761390992)}, 6: {}, 7: {}, 8: {}, 9: {}, 10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}}
+    results = {3: {'ham3_102': (2, 5.487906906687101e-09, 26.668307663174346), '3_17_13': (3, 8.748746505027327e-09, 1.6907278751023114), 'ex-1_166': (3, 7.520237099711835e-09, 1.2516490330453962), 'miller_11': (3, 4.50146386832273e-09, 14.192241134122014)}, 4: {'decod24-v0_38': (2, 7.084205444485292e-09, 84.25802736007608), 'rd32-v0_66': (2, 4.143922094357322e-09, 10.16023734700866), 'decod24-v2_43': (2, 7.303407212333468e-09, 29.003465383080766), 'rd32-v1_68': (2, 5.156767901581816e-09, 11.690480364020914)}, 5: {'4gt13-v1_93': (3, 8.716013466525396e-09, 4.623484890908003), 'alu-v2_33': (3, 2.1432007279997833e-09, 7.497361100045964), 'alu-v2_32': (4, 9.513836829455613e-09, 252.66068387893029), 'mod5d2_64': (2, 9.064051065266199e-09, 20.493360723135993), 'hwb4_49': (4, 7.2158514718978495e-09, 121.33502761390992), 'alu-v4_36': (4, 8.891001601618598e-09, 123.77835846808739)}, 6: {}, 7: {}, 8: {}, 9: {}, 10: {}, 11: {}, 12: {}, 13: {}, 14: {}, 15: {}, 16: {}}
 for num_qbits in (5,6,7,8):
     for qasm in testdata[num_qbits]:
         if qasm in results[num_qbits]: continue
-        #if qasm == 'one-two-three-v0_98': continue 
+        if qasm != 'one-two-three-v0_98': continue
+        #if qasm != '4gt12-v0_87': continue 
         if os.path.exists(qasm + ".out"): os.remove(qasm + ".out")
         for opt_method in ["NeuralMinimizer"]:
             for local_search in local_searches:
@@ -57,12 +57,14 @@ for num_qbits in (5,6,7,8):
                         if use_squander:
                             cDecompose = qgd_N_Qubit_Decomposition_adaptive( np.eye(1<<num_qbits), level_limit_max=levels, level_limit_min=levels )
                             cDecompose.set_Unitary_From_Binary(qasm + ".binary")
+                            cDecompose.set_Iteration_Loops({num_qbits: 30})
+                            cDecompose.set_Optimizer("BFGS"); #BFGS, ADAM, ADAM_BATCHED, BFGS2
                             t = timeit.timeit(cDecompose.Start_Decomposition, number=1)
                             cDecompose.apply_Imported_Gate_Structure()
                         else:
                             ret = [None]
                             cmd = ("../bin/OptimusApp --filename=libsquander.so --opt_method=" +
-                                    opt_method + " --localsearch_method=" + local_search + " --bfgs_iterations=2001 --adam_b1=0.68 --adam_b2=0.8 --adam_rate=0.001 --adam_iterations=100 --iterations=30" + " --neural_model=neural" + " --neural_trainmethod=lbfgs" + " --sample_method=" + sample_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ("" if not cntnue else " --continue=0"))
+                                    opt_method + " --localsearch_method=" + local_search + " --bfgs_iterations=10001 --adam_b1=0.68 --adam_b2=0.8 --adam_rate=0.001 --adam_iterations=-100000 --iterations=30" + " --neural_model=neural" + " --neural_start_samples=1000" + " --neural_samples=500" + " --neural_weights=20" + " --neural_trainmethod=lbfgs" + " --sample_method=" + sample_method + " --folder=" + folder + " --qasm=" + qasm + " --levels=" + str(levels) + ("" if not cntnue else " --continue=0"))
                             print(cmd)
                             def runfunc():
                                 ret[0] = os.system("hwloc-bind --membind node:" + str(numa) + " --cpubind node:" + str(numa) + " -- " + cmd + ">>" + qasm + ".out")
