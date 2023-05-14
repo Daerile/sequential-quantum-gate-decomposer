@@ -121,49 +121,6 @@ gates = cDecompose.List_Gates()
 #print( parameters )
 #print( unitary )
 
-def make_u3(parameters):
-    return np.array(
-        [[np.cos(parameters[0]*2/2), -np.exp(parameters[2]*1j)*np.sin(parameters[0]*2/2)],
-         [np.exp(parameters[1]*1j)*np.sin(parameters[0]*2/2), np.exp((parameters[1]+parameters[2])*1j)*np.cos(parameters[0]*2/2)]])
-def make_ry(parameters):
-    return make_u3([parameters[0], 0, 0])
-    #return np.array(
-    #    [[np.cos(parameters[0]*2/2), -np.sin(parameters[0]*2/2)],
-    #     [np.sin(parameters[0]*2/2), np.cos(parameters[0]*2/2)]])
-def make_controlled(gate):
-    return np.block([[np.eye(2), np.zeros((2, 2))], [np.zeros((2, 2)), gate]]) #[np.ix_(*([[0,2,1,3]]*2))]
-def make_cry(parameters):
-    return make_ry(parameters) #make_controlled(make_ry(parameters))
-def apply_to_qbit(unitary, num_qbits, target_qbit, control_qbit, gate):
-    pow2qb = 1 << num_qbits
-    t = np.arange(num_qbits)
-    if not control_qbit is None:
-        t[:-1] = np.roll(t[:-1], (target_qbit - control_qbit) % num_qbits)
-        gate = make_controlled(gate)
-    t = np.roll(t, -target_qbit)
-    idxs = np.arange(pow2qb).reshape(*((2,)*num_qbits)).transpose(t).flatten().tolist()
-    return np.kron(np.eye(pow2qb>>(1 if control_qbit is None else 2), dtype=np.bool_), gate)[np.ix_(idxs, idxs)].astype(unitary.dtype) @ unitary
-def make_apply_to_qbit_loop(num_qbits):
-    twos = tuple([2]*num_qbits)
-    def apply_to_qbit_loop(unitary, _, target_qbit, control_qbit, gate):
-        pow2qb = 1 << num_qbits
-        t = np.roll(np.arange(num_qbits), target_qbit)
-        idxs = np.arange(pow2qb).reshape(twos).transpose(to_fixed_tuple(t, num_qbits)).copy().reshape(-1, 2) #.reshape(*([2]*num_qbits)).transpose(t).reshape(-1, 2)
-        for pair in (idxs if control_qbit is None else idxs[(idxs[:,0] & (1<<control_qbit)) != 0,:]):
-            unitary[pair,:] = twoByTwoFloat(gate, unitary[pair,:])
-            #unitary[pair,:] = gate @ unitary[pair,:]
-        return unitary
-    return apply_to_qbit_loop
-def process_gates32(unitary, num_qbits, parameters, target_qbits, control_qbits):
-    return process_gates(unitary.astype(np.complex64), num_qbits, parameters, target_qbits, control_qbits).astype(np.complex128)
-def process_gates(unitary, num_qbits, parameters, target_qbits, control_qbits):
-    if unitary.dtype == np.dtype(np.complex128): unitary = np.copy(unitary)
-    return process_gates_loop(unitary, num_qbits, parameters, target_qbits, control_qbits, make_apply_to_qbit_loop(num_qbits)) #apply_to_qbit
-def process_gates_loop(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_func):
-    for param, target_qbit, control_qbit in zip(parameters, target_qbits, control_qbits):
-        unitary = apply_to_qbit_func(unitary, num_qbits, target_qbit, None if control_qbit == target_qbit else control_qbit, (make_u3(param) if control_qbit is None or control_qbit==target_qbit else make_cry(param)).astype(unitary.dtype))
-    return unitary
-
 def get_gate_structure(levels, qbit_num):
     target_qbits, control_qbits = [], []
     for _ in range(levels):        
@@ -666,8 +623,224 @@ def newton_method():
         #xn = np.real(xn + np.linalg.solve(J.conjugate().T @ J, -J.conjugate().T @ mat)) % (2 * np.pi)      
         #Jplus = np.linalg.inv(J.conjugate().T @ J) @ J.conjugate().T
         #xn = xn - np.real(Jplus @ mat) % (2 * np.pi)
-        
-    
+
+from numba import njit
+from numba.np.unsafe.ndarray import to_fixed_tuple
+from functools import lru_cache
+@njit
+def make_u3(parameters):
+    return np.array(
+        [[np.cos(parameters[0]*2/2), -np.exp(parameters[2]*1j)*np.sin(parameters[0]*2/2)],
+         [np.exp(parameters[1]*1j)*np.sin(parameters[0]*2/2), np.exp((parameters[1]+parameters[2])*1j)*np.cos(parameters[0]*2/2)]])
+@njit
+def make_ry(parameters):
+    return make_u3([parameters[0], 0, 0])
+    #return np.array(
+    #    [[np.cos(parameters[0]*2/2), -np.sin(parameters[0]*2/2)],
+    #     [np.sin(parameters[0]*2/2), np.cos(parameters[0]*2/2)]])
+@njit
+def make_controlled(gate):
+    return np.block([[np.eye(2), np.zeros((2, 2))], [np.zeros((2, 2)), gate]]) #[np.ix_(*([[0,2,1,3]]*2))]
+@njit
+def make_cry(parameters):
+    return make_ry(parameters) #make_controlled(make_ry(parameters))
+@njit
+def twoByTwoFloat(A, B):
+    res = np.empty(B.shape, dtype=B.dtype)
+    for j in range(2):
+        for i in range(B.shape[1]):
+            res[j,i] = (np.real(A[j,0])*np.real(B[0,i])-np.imag(A[j,0])*np.imag(B[0,i])) + (np.real(A[j,1])*np.real(B[1,i])-np.imag(A[j,1])*np.imag(B[1,i]))
+            res[j,i] += ((np.real(A[j,0])*np.imag(B[0,i])+np.imag(A[j,0])*np.real(B[0,i])) + (np.real(A[j,1])*np.imag(B[1,i])+np.imag(A[j,1])*np.real(B[1,i]))) * 1j
+            #((np.real(A[j,0])*np.imag(B[0,i])+np.real(A[j,1])*np.imag(B[1,i])) + (np.imag(A[j,0])*np.real(B[0,i])+np.imag(A[j,1])*np.real(B[1,i]))) * 1j
+    return res
+@lru_cache(128)
+def make_apply_to_qbit_loop(num_qbits):
+    twos = tuple([2]*num_qbits)
+    @njit
+    def apply_to_qbit_loop(unitary, _, target_qbit, control_qbit, gate):
+        pow2qb = 1 << num_qbits
+        t = np.roll(np.arange(num_qbits), target_qbit)
+        idxs = np.arange(pow2qb).reshape(twos).transpose(to_fixed_tuple(t, num_qbits)).copy().reshape(-1, 2) #.reshape(*([2]*num_qbits)).transpose(t).reshape(-1, 2)
+        for pair in (idxs if control_qbit is None else idxs[(idxs[:,0] & (1<<control_qbit)) != 0,:]):
+            unitary[pair,:] = twoByTwoFloat(gate, unitary[pair,:])
+            #unitary[pair,:] = gate @ unitary[pair,:]
+        return unitary
+    return apply_to_qbit_loop
+def process_gates(unitary, num_qbits, parameters, target_qbits, control_qbits):
+    if unitary.dtype == np.dtype(np.complex128): unitary = np.copy(unitary)
+    return process_gates_loop(unitary, num_qbits, parameters, target_qbits, control_qbits, make_apply_to_qbit_loop(num_qbits)) #apply_to_qbit
+@njit
+def process_gates_loop(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_func):
+    for param, target_qbit, control_qbit in zip(parameters, target_qbits, control_qbits):
+        unitary = apply_to_qbit_func(unitary, num_qbits, target_qbit, None if control_qbit == target_qbit else control_qbit, (make_u3(param) if control_qbit is None or control_qbit==target_qbit else make_cry(param)).astype(unitary.dtype))
+    return unitary
+import itertools, collections
+sym_expand = True
+class SymExpr:
+    def __init__(self, newsums):
+        self.sums = list(itertools.chain.from_iterable([x.sums if isinstance(x, SymExpr) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 0, newsums)]))
+    def __add__(self, other):
+        return SymExpr([self, other])
+    def __sub__(self, other):
+        return SymExpr([self, -other])
+    def __mul__(self, other):
+        if not sym_expand: return SymTerm([self, other])
+        newsums = []
+        for sum in self.sums:
+            newsums.append(sum * other)
+        return SymExpr(newsums)
+    def __neg__(self):
+        return SymExpr([-x for x in self.sums])
+    def apply_to(self, symdict):
+        return np.sum(x.apply_to(symdict) for x in self.sums)
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return '+'.join(str(x) for x in self.sums)
+class SymTerm:
+    def __init__(self, newvar):
+        #if sym_expand: assert all(not isinstance(x, SymExpr) for x in newvar)
+        negidx = {i for i, x in enumerate(newvar) if isinstance(x, SymFunc) and x.func == 'neg'}
+        if len(negidx) > 1:
+            if (len(negidx) & 1) != 0: negidx.pop()
+            newvar = [-x if i in negidx else x for i, x in enumerate(newvar)] 
+        self.var = list(itertools.chain.from_iterable([x.var if isinstance(x, SymTerm) else [x] for x in newvar]))
+    def __add__(self, other):
+        return SymExpr([self, other])
+    def __sub__(self, other):
+        return SymExpr([self, -other])
+    def __mul__(self, other):
+        if isinstance(other, SymExpr): return other * self
+        else: return SymTerm([self, other])
+    def apply_to(self, symdict):
+        return np.prod([x.apply_to(symdict) for x in self.var])
+    def __neg__(self):
+        return SymTerm([-self.var[0]] + self.var[1:])
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return '*'.join(str(x) for x in self.var)
+class SymConst:
+    def __init__(self, c):
+        self.c = c
+    def __add__(self, other):
+        if self.c == 0: return other
+        return SymExpr([self, other])
+    def __sub__(self, other):
+        if self.c == 0: return -other
+        return SymExpr([self, -other])
+    def __mul__(self, other):
+        if self.c == 0: return self
+        elif self.c == 1: return other
+        return SymTerm([self, other])
+    def __neg__(self):
+        return SymConst(-self.c)
+    def apply_to(self, symdict):
+        return self.c
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return str(self.c)
+class SymSymbol:
+    def __init__(self, sym):
+        self.sym = sym
+    def __add__(self, other):
+        return SymExpr([self, other])
+    def __neg__(self):
+        return SymFunc('neg', self)
+    def apply_to(self, symdict):
+        return symdict[self.sym]
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return self.sym
+class SymFunc: #func in ['cos', 'sin', 'neg']
+    def __init__(self, func, sym):
+        self.func, self.sym = func, sym
+    def __mul__(self, other):
+        if isinstance(other, SymExpr): return other * self
+        return SymTerm([self, other])
+    def __neg__(self):
+        if self.func == 'neg': return self.sym
+        return SymFunc('neg', self)
+    def apply_to(self, symdict):
+        funcs = {'sin': np.sin, 'cos': np.cos, 'neg': np.negative} 
+        return funcs[self.func](self.sym.apply_to(symdict)) 
+    def __repr__(self):
+        return str(self)
+    def __str__(self):
+        return ('-' + str(self.sym) if self.func == 'neg' else self.func + '(' + str(self.sym) + ')')
+def make_u3_sym(parameters):
+    cosTheta, sinTheta = SymFunc('cos', parameters[0]),  SymFunc('sin', parameters[0])
+    return [[(cosTheta, SymConst(0)),
+             (-SymFunc('cos', parameters[2]) * sinTheta, -SymFunc('sin', parameters[2]) * sinTheta)],
+            [(SymFunc('cos', parameters[1]) * sinTheta, SymFunc('sin', parameters[1]) * sinTheta),
+             (SymFunc('cos', parameters[1]+parameters[2]) * cosTheta, SymFunc('sin', parameters[1]+parameters[2]) * cosTheta)]] 
+def make_ry_sym(parameters):
+    cosTheta, sinTheta = SymFunc('cos', parameters[0]), SymFunc('sin', parameters[0])
+    return [[(cosTheta, SymConst(0)),
+             (-sinTheta, SymConst(0))],
+            [(sinTheta, SymConst(0)),
+             (cosTheta, SymConst(0))]]
+def make_cry_sym(parameters): return make_ry_sym(parameters)
+def twoByTwoFloat_sym(A, B):
+    res = [[[None, None] for _ in range(len(B[0]))] for x in range(2)]
+    for j in range(2):
+        for i in range(len(B[0])):
+            res[j][i][0] = (A[j][0][0]*B[0][i][0]-A[j][0][1]*B[0][i][1]) + (A[j][1][0]*B[1][i][0]-A[j][1][1]*B[1][i][1])
+            res[j][i][1] = (A[j][0][0]*B[0][i][1]-A[j][0][1]*B[0][i][0]) + (A[j][1][0]*B[1][i][1]+A[j][1][1]*B[1][i][0])
+    return res
+def apply_to_qbit_loop_sym(unitary, num_qbits, target_qbit, control_qbit, gate):
+    pow2qb = 1 << num_qbits
+    t = np.roll(np.arange(num_qbits), target_qbit)
+    idxs = np.arange(pow2qb).reshape(*([2]*num_qbits)).transpose(t).reshape(-1, 2)
+    for pair in (idxs if control_qbit is None else idxs[(idxs[:,0] & (1<<control_qbit)) != 0,:]):
+        unitary[pair[0]], unitary[pair[1]] = twoByTwoFloat_sym(gate, [unitary[pair[0]], unitary[pair[1]]])
+    return unitary
+def process_gates_sym(unitary, num_qbits, parameters, target_qbits, control_qbits):
+    return process_gates_loop_sym(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_loop_sym)
+def process_gates_loop_sym(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_func):
+    for param, target_qbit, control_qbit in zip(parameters, target_qbits, control_qbits):
+        unitary = apply_to_qbit_func(unitary, num_qbits, target_qbit, None if control_qbit == target_qbit else control_qbit, (make_u3_sym(param) if control_qbit is None or control_qbit==target_qbit else make_cry_sym(param)))
+    return unitary
+def sym_execute():
+    from qiskit import QuantumCircuit, transpile
+    from qgd_python.utils import get_unitary_from_qiskit_circuit
+    import sys
+    filename = "/home/morse/ibm_qx_mapping/examples/" + 'ham3_102' + ".qasm"
+    qc_trial = QuantumCircuit.from_qasm_file( filename )
+    qc_trial = transpile(qc_trial, optimization_level=3, basis_gates=['cz', 'cx', 'u3'], layout_method='sabre')
+    Umtx_orig = get_unitary_from_qiskit_circuit( qc_trial )
+    #Umtx_orig = np.eye(1<<3, dtype=np.complex128)
+    levels = 1
+    from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
+    cDecompose = qgd_N_Qubit_Decomposition_adaptive( Umtx_orig.conj().T, level_limit_max=5, level_limit_min=0 )
+    for idx in range(levels):
+        cDecompose.add_Adaptive_Layers()
+    cDecompose.add_Finalyzing_Layer_To_Gate_Structure()
+    cDecompose.set_Cost_Function_Variant(0)
+    num_of_parameters = cDecompose.get_Parameter_Num()
+    xn = np.random.random(num_of_parameters)*2*np.pi #np.ones(num_of_parameters, dtype=np.float64)*np.pi/2
+    cDecompose.set_Optimized_Parameters(xn)
+    cDecompose.Prepare_Gates_To_Export()
+    gates = cDecompose.get_Gates()
+    #target_qbits, control_qbits = get_gate_structure(levels, qbit_num)
+    target_qbits = np.array([x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
+    control_qbits = np.array([x['control_qbit'] if 'control_qbit' in x else x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
+    params = np.array([[x['Theta']/2, 0 if x['type'] == 'CRY' else x['Phi'], 0 if x['type'] == 'CRY' else x['Lambda']] for x in reversed(gates)], dtype=np.float64)
+    #print(1-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/Umtx_orig.shape[0], cDecompose.Optimization_Problem(xn), cDecompose.Optimization_Problem_Combined(xn)[0])
+    uni_sym = [[(SymSymbol('r' + str(i) + '_' + str(j)), SymSymbol('i' + str(i) + '_' + str(j))) for j in range(Umtx_orig.shape[1])] for i in range(Umtx_orig.shape[0])]
+    param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates[:5])))]
+    target_sym = process_gates_sym(uni_sym, Umtx_orig.shape[0].bit_length()-1, param_sym, target_qbits[-5:], control_qbits[-5:])
+    symdict = dict(collections.ChainMap(*[{'r' + str(i) + '_' + str(j): np.real(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])},
+               {'i' + str(i) + '_' + str(j): -np.imag(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])}] +
+               [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates[:5])))]))
+    print(target_sym[0][0][0], target_sym[0][0][1])
+    print(target_sym[0][0][0].apply_to(symdict))
+    print(target_sym[0][0][1].apply_to(symdict))
+    print(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params[-5:], target_qbits[-5:], control_qbits[-5:])[0,0])
+    print(len(target_sym[0][0][0].sums))
 #train_model(num_of_parameters, 100000)
 #transformer_model()
-newton_method()
+#newton_method()
+sym_execute()
