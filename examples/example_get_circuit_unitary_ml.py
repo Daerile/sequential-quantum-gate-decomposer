@@ -423,20 +423,64 @@ def train_model(num_of_parameters, size):
         y_test[i,:] = params / (2*np.pi)
     model.evaluate(x_test.view(np.float64).reshape(x_test.shape + (2,)), {'out' + str(i): y_test[:,i] for i in real_params})
     print(model.predict(x_test.view(np.float64).reshape(x_test.shape + (2,)))[:5], y_test[:5,real_params])
-def wolfe_conditions_line(f, xn, delta, oldmn, m): #compute learning rate by backtracking line search
-    c, tau, alpha, feval = 0.5, 0.5, [1.0], []
+def backtracking_line_search(f, xn, delta, oldmn, m): #compute learning rate by backtracking line search
+    c, tau, alpha = 0.5, 0.5, 1.0
     #assert m < 0
-    t = -c * m #t = max(0, -c * m)
+    t = -c * m
     while True:
-        ftry = f(xn + delta * alpha[-1])
-        #if len(feval) and feval[-1] == ftry: break
-        feval.append(ftry)
-        #if oldmn - feval[-1] > 0: break
-        if oldmn - feval[-1] >= alpha[-1] * t: break        
-        if alpha[-1] < 1e-10: break
-        alpha.append(tau * alpha[-1])
-    #print(alpha, feval, oldmn, m, t, min(enumerate(alpha), key=lambda x: feval[x[0]])[1])
-    return min(enumerate(zip(alpha, feval)), key=lambda x: feval[x[0]])[1]
+        ftry = f(xn + delta * alpha)
+        if oldmn - ftry >= alpha * t: return alpha, ftry        
+        alpha *= tau
+def ilb(xn, cost, f, ops, D, k):
+    import bisect
+    b = len(ops)
+    for exp in range(1, D+1):
+        breadthLimit = k + b**exp
+        newOpen = [(cost, 0, xn)]; idx = 1
+        for d in range(1, D+1):
+            print(exp, d)
+            opn, newOpen = newOpen, []
+            for node in opn:
+                for op in ops:
+                    newx = op(node[2])
+                    tryf = f(newx)
+                    if tryf < cost:
+                        return newx, tryf
+                    else:
+                        bisect.insort(newOpen, (tryf, idx, newx)); idx += 1
+                        if len(newOpen) > breadthLimit: newOpen.pop()
+def mbfgs(x, f, g):
+    B = np.eye(x.shape[0], dtype=x.dtype)
+    #B = np.random.random((x.shape[0], x.shape[0]))
+    #B = B@B.T + x.shape[0]*np.eye(x.shape[0], dtype=x.dtype)
+    phi, rho = 1e-4, 0.8
+    k = 0
+    cost, grad = f(x), g(x)
+    initcost = cost
+    while True:
+        p = np.linalg.solve(B, -grad)
+        lbda = 1.0
+        crateoverall, crate = (initcost-cost)/max(1,k), np.linalg.norm(grad)
+        if crateoverall < 10e-5: phi = max(0.99, phi*2)
+        print("Cost: ", cost, "Convergence rate: ", crateoverall, crate)
+        gradp = phi*np.dot(grad, p)
+        while True: #backtracking line search
+            s = lbda*p
+            newx = x+s
+            newcost = f(newx)
+            if newcost <= cost + lbda*gradp:
+                cost, x = newcost, newx % (2*np.pi)
+                break
+            lbda *= rho
+        newgrad = g(x)
+        gamma = newgrad-grad
+        t = 1 + max(-np.dot(gamma, s)/np.square(np.linalg.norm(s)), 0)
+        y = gamma + t*np.linalg.norm(grad)*s #y = gamma + C*s
+        B = B - (B@np.outer(s, s)@B)/np.dot(s, B @ s) + np.outer(y, y)/np.dot(y, s)
+        #assert np.all(np.abs(B-B.T) < 1e-8)
+        grad = newgrad
+        k += 1
+    
 def newton_method():
     from qiskit import QuantumCircuit, transpile
     from qgd_python.utils import get_unitary_from_qiskit_circuit
@@ -447,8 +491,9 @@ def newton_method():
     Umtx_orig = get_unitary_from_qiskit_circuit( qc_trial )
     from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
     cDecompose = qgd_N_Qubit_Decomposition_adaptive( Umtx_orig.conj().T, level_limit_max=5, level_limit_min=0 )
-    cDecompose.set_Cost_Function_Variant(6)
+    cDecompose.set_Cost_Function_Variant(0)
     # adding decomposing layers to the gat structure
+    levels = 5
     for idx in range(levels):
         cDecompose.add_Adaptive_Layers()
     cDecompose.add_Finalyzing_Layer_To_Gate_Structure()
@@ -512,20 +557,20 @@ def newton_method():
     xn = sample()
     #batch = np.random.random((batchsize, num_of_parameters)) * 2 * np.pi
     #print(cDecompose.Optimization_Problem_Batch(batch).shape)
-    def f(xn):
+    def f(xn, *args):
         return cDecompose.Optimization_Problem(xn)
-        #mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
+        #mat = cDecompose.get_Matrix(xn)
         #print(cDecompose.Optimization_Problem(xn),costfunc(mat)) 
         #return costfunc(mat)
-    def grad(xn):
-        return cDecompose.Optimization_Problem_Combined(xn)[1]
+    def grad(xn, *args):
+        return cDecompose.Optimization_Problem_Grad(xn)
     def costfunc(mat):
         #return np.sum(np.abs(mat-np.eye(mat.shape[1], dtype=mat.dtype)))
         return np.sum(np.square((mat-np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64)))
         #return 1.0-np.real(np.trace(mat))/mat.shape[1]
-    from scipy.optimize import least_squares
+    from scipy.optimize import least_squares, minimize
     def fun(xn):
-        mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
+        mat = cDecompose.get_Matrix(xn)
         #return np.real(mat - np.eye(mat.shape[1], dtype=mat.dtype)).flatten()
         return (mat - np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64).flatten()
     def jac(xn):
@@ -534,24 +579,35 @@ def newton_method():
         mat = mat.view(np.float64).flatten()
         return np.stack(mat_deriv, -1).view(np.float64).reshape(mat.shape[0]//2, num_of_parameters, 2).transpose(0,2,1).reshape(mat.shape[0], num_of_parameters)
     #print(fourier_coeffs_mc(f, [[0]*num_of_parameters, [2*np.pi]*num_of_parameters], 100))
-    def oneparammin(xn):
+    #f = A*cos(p1)*cos(p2) + B*sin(p1)*sin(p2) + C*sin(p1)*cos(p2) + D*cos(p1)*sin(p2) + E*cos(p1) + F*cos(p2) + G*sin(p1) + H*sin(p2) + I
+    #C*sin(p1)*cos(p2)+D*cos(p1)*sin(p2)+G*sin(p1) + H*sin(p2) + I
+    #sin(p1)(C*cos(p2)+G) + sin(p2)(D*cos(p1)+H)+I
+    def twoparammin(xn): #f(x_n)=D+A*sin(x1+x2)+B*sin(x1-x2)+C*sin(x1+x2)*sin(x1-x2)
+        pass #f'x1=A*cos(x1+x2)+B*cos(x1-x2)+C*sin(x1+x2)*cos(x1-x2)+C*cos(x1+x2)*sin(x1-x2)
+        #f'x2=A*cos(x1+x2)-B*cos(x1-x2)-C*sin(x1+x2)*cos(x1-x2)+C*cos(x1+x2)*sin(x1-x2)
+        #0=A*cos(x1+x2)+C*cos(x1+x2)*sin(x1-x2)
+    def oneparammin(xn): #f(x)=C+A*sin(x+phi)
+        import itertools
         cDecompose.set_Cost_Function_Variant(0)
         cost = cDecompose.Optimization_Problem(xn)
-        while True:
+        while cost >= 1e-8:
             shift, costs = np.zeros((len(xn),)), np.zeros((len(xn),))
+            xnspi2 = np.repeat(xn[np.newaxis,...], len(xn), axis=0)
+            xnspi = np.repeat(xn[np.newaxis,...], len(xn), axis=0)
+            xnspi2[np.diag_indices_from(xnspi2)] += np.pi/2
+            xnspi[np.diag_indices_from(xnspi)] += np.pi
+            cs = cDecompose.Optimization_Problem_Batch(np.concatenate([xnspi2, xnspi]))
+            grad = []
             for d in range(len(xn)):
-                val = xn[d]
-                xn[d] += np.pi/2
-                c1 = cDecompose.Optimization_Problem(xn)
                 #f(x)=C+A*sin(x+phi) and f(x+PI/2)=C+A*cos(x+phi)
-                #(f(x)-C)/(f(x+PI/2)-C)=tan(x+phi)                
-                xn[d] += np.pi/2
-                c2 = cDecompose.Optimization_Problem(xn)
+                #(f(x)-C)/(f(x+PI/2)-C)=tan(x+phi)
+                c1 = cs[d]
+                c2 = cs[d+len(xn)]                
                 C = (cost+c2)/2
                 truephi = np.arctan2(cost-C, c1-C)               
-                truephi = (truephi-val) % (2 * np.pi) #sin(x+phi)=-1 3PI/2-phi
+                truephi = (truephi-xn[d]) % (2 * np.pi) #sin(x+phi)=-1 3PI/2-phi
                 shift[d] = 3*np.pi/2-truephi
-                origsin = np.sin(val+truephi)
+                origsin = np.sin(xn[d]+truephi)
                 A = (cost - c2) / 2 / origsin
                 costs[d] = cost-A*(origsin+1)
                 #sin(x+y) = A sin(x+phi)cos(y) + A cos(x+phi)sin(y)
@@ -562,21 +618,67 @@ def newton_method():
                 #f(x+PI) = C+Asin(x+PI + phi) = C-Asin(x+phi)
                 #f(x+3PI/2)= C+Asin(x+3PI/2 + phi)= C-Acos(x+phi)
                 #print(cost, c1, c2, c3, costs[d])
-                xn[d] = val
-            minidx = min(enumerate(costs), key=lambda x: x[1])[0]
-            cost = costs[minidx]
+                grad.append(np.linalg.norm(cDecompose.Optimization_Problem_Grad(xn)))
+            minidx = max(filter(lambda x: cost-costs[x[0]]>1e-6, enumerate(grad)),
+                key=lambda x: x[1],
+                default=min(enumerate(costs), key=lambda x: x[1]))[0]
+            #def grad(x):
+            #    val = xn[x[0]] 
+            #    xn[x[0]] = shift[x[0]]
+            #    g = np.linalg.norm(cDecompose.Optimization_Problem_Grad(xn))
+            #    xn[x[0]] = val
+            #    return g
+            #minidx = max(list(sorted(enumerate(costs), key=lambda x: x[1]))[:len(xn)//5], key=grad)[0]
+            #if cost - costs[minidx] <= 1e-3:
+            #    print(cost, costs[minidx])
+            #    return xn
+            """
+            costs2 = []
+            shift2 = []
+            for c in itertools.combinations(range(len(xn)), 2):
+                val1, val2 = xn[c[0]], xn[c[1]]
+                xn[c[0]], xn[c[1]] = shift[c[0]], shift[c[1]]
+                costs2.append(cDecompose.Optimization_Problem(xn))
+                shift2.append(c)
+                xn[c[0]], xn[c[1]] = val1, val2
+            minidx2 = min(enumerate(costs2), key=lambda x: x[1])[0]
+            """
+            #minidx = min(enumerate(costs), key=lambda x: x[1])[0]            
+            #if minidx2 < minidx:
+            #    cost = costs2[minidx2]
+            #    xn[shift2[minidx2][0]] = shift[shift2[minidx2][0]]
+            #    xn[shift2[minidx2][1]] = shift[shift2[minidx2][1]]
+            #else:
+            #cost = costs[minidx]
+            #xn[minidx] = shift[minidx]
+            #minidxs = [y[0] for y in sorted(enumerate(costs), key=lambda x: x[1])]
+            #minidx = minidxs[0]
             xn[minidx] = shift[minidx]
-            print(cost) 
-        assert False 
-    #ret = least_squares(fun, xn, jac, (0, 2*np.pi), verbose=2)
+            cost = costs[minidx]
+            #for minidx in minidxs[1:]:
+            #    val = xn[minidx]
+            #    xn[minidx] = shift[minidx]
+            #    ftry = cDecompose.Optimization_Problem(xn)         
+            #    if ftry < cost:
+            #        cost = ftry; continue
+            #    else: xn[minidx] = val
+            print(cost, grad[minidx])#, cDecompose.Optimization_Problem(xn))#, np.linalg.norm(cDecompose.Optimization_Problem_Grad(xn)))
+            break
+        return xn
+    #ret = least_squares(fun, xn, jac, (-np.inf, np.inf), verbose=2)
+    #ret = minimize(f, xn, 'BFGS', jac=grad, options={'maxiter': 10000, 'disp': True})
     #ret = least_squares(fun, xn, jac, method='lm', verbose=2)
     #ret = least_squares(f, xn, grad, (0, 2*np.pi), verbose=2)
     #ret = least_squares(fun, xn, jac, (0, 2*np.pi), verbose=2)
     #print(f(ret.x)); assert False
-    oneparammin(xn)
+    #mbfgs(xn, f, grad)
+    xn = oneparammin(xn)
+    #mbfgs(xn, f, grad)
+    #https://en.wikipedia.org/wiki/Gauss%E2%80%93Newton_algorithm
+    cDecompose.set_Cost_Function_Variant(6)
     while True:
         mat, mat_deriv = cDecompose.Optimization_Problem_Combined_Unitary(xn)
-        cost = costfunc(mat)
+        cost = f(xn)
         print("Cost: ", cost, 1.0-np.real(np.trace(mat))/mat.shape[1], lbda)
         if cost < 1e-8: break
         mat = (mat - np.eye(mat.shape[1], dtype=mat.dtype)).view(np.float64).flatten()
@@ -590,35 +692,50 @@ def newton_method():
         #J = np.stack(mat_deriv, 2).reshape(mat.shape[0], num_of_parameters)
         grad = J.T @ mat
         genJ = J.T @ J
+        #https://en.wikipedia.org/wiki/Levenberg%E2%80%93Marquardt_algorithm
         #damping = lbda*np.eye(num_of_parameters, dtype=J.dtype)
         damping = lbda*np.diag(np.diag(genJ))
         try:
             delta = np.linalg.lstsq(genJ - damping, -grad, rcond=None)[0]
             #delta = np.linalg.solve(genJ, -grad)
         except np.linalg.LinAlgError:
-            print("Singular matrix", np.linalg.matrix_rank(J.T @ J), num_of_parameters)
+            print("Singular matrix", np.linalg.matrix_rank(genJ), num_of_parameters)
             delta = np.linalg.lstsq(genJ, -grad, rcond=None)[0]
             #xn = np.random.random(num_of_parameters)*2*np.pi
             #continue
-        drctn = np.dot(grad, delta)
-        lr, newc = wolfe_conditions_line(f, xn, delta, cost, drctn)
-        if drctn < 0 and newc < cost - 0.0001 and cost - newc >= -0.5 * drctn * lr:
+        drctn = np.dot(2*grad, delta)
+        if drctn < 0: lr, newc = backtracking_line_search(f, xn, delta, cost, drctn)
+        if drctn < 0 and newc < cost:
             xn = (xn + delta * lr)# % (2 * np.pi)
+            xn = oneparammin(xn)
+            cDecompose.set_Cost_Function_Variant(6)
             if lbda > 1e-7: lbda = lbda / 10
         else:
-            oneparammin(xn)
+            #xn = oneparammin(xn)
             #xn = np.random.random(num_of_parameters)*2*np.pi
             #continue
-            """
+            #https://www.cs.cmu.edu/afs/cs/project/jair/pub/volume8/finkelstein98a-html/node6.html
+            inc = 2*np.pi/num_of_parameters
+            def makeop():
+                idxes = np.random.choice(num_of_parameters, num_of_parameters//2)
+                mask = np.arange(len(xn))==idxes
+                adj = (2*np.random.randint(0, 2, len(xn))-1)*inc
+                return lambda x: np.where(mask, x+adj, x)
+            cDecompose.set_Cost_Function_Variant(0)
+            xn, newc = ilb(xn, f(xn), f, [makeop() for _ in range(len(xn))], 5, 20)
+            cDecompose.set_Cost_Function_Variant(6)            
+            continue
             while True:
-                amount = np.random.randint(num_of_parameters // 10, num_of_parameters // 5)
+                amount = np.random.randint(1, num_of_parameters+1)
                 idxes = np.random.choice(num_of_parameters, amount)
                 mask = np.zeros(num_of_parameters); mask[idxes] = True
-                rand = np.zeros(num_of_parameters); rand[idxes] = np.random.random(amount)*2*np.pi
-                if True: #f(np.where(mask, rand, xn)) < cost:
-                    xn = np.where(mask, rand, xn)
+                rand = np.zeros(num_of_parameters); rand[idxes] = xn[idxes]+np.pi/2
+                newx = np.where(mask, rand, xn)
+                tryf = f(newx)
+                print(cost, tryf)
+                if tryf < cost:
+                    xn = newx
                     break
-            """
             if lbda < 0.1: lbda = lbda * 10
         #xn = np.real(xn + np.linalg.solve(J.conjugate().T @ J, -J.conjugate().T @ mat)) % (2 * np.pi)      
         #Jplus = np.linalg.inv(J.conjugate().T @ J) @ J.conjugate().T
@@ -629,9 +746,14 @@ from numba.np.unsafe.ndarray import to_fixed_tuple
 from functools import lru_cache
 @njit
 def make_u3(parameters):
+    costheta, sintheta = np.cos(parameters[0]*2/2), np.sin(parameters[0]*2/2)
+    lambdaphi = parameters[1]+parameters[2]
+    cosphi, sinphi = np.cos(parameters[1]), np.sin(parameters[1])
+    coslambda, sinlambda = np.cos(parameters[2]), np.sin(parameters[2])
+    cosphilambda, sinphilambda = np.cos(lambdaphi), np.sin(lambdaphi)
     return np.array(
-        [[np.cos(parameters[0]*2/2), -np.exp(parameters[2]*1j)*np.sin(parameters[0]*2/2)],
-         [np.exp(parameters[1]*1j)*np.sin(parameters[0]*2/2), np.exp((parameters[1]+parameters[2])*1j)*np.cos(parameters[0]*2/2)]])
+        [[costheta, -(coslambda+sinlambda*1j)*sintheta],
+         [(cosphi+sinphi*1j)*sintheta, (cosphilambda+sinphilambda*1j)*costheta]])
 @njit
 def make_ry(parameters):
     return make_u3([parameters[0], 0, 0])
@@ -674,108 +796,194 @@ def process_gates_loop(unitary, num_qbits, parameters, target_qbits, control_qbi
     for param, target_qbit, control_qbit in zip(parameters, target_qbits, control_qbits):
         unitary = apply_to_qbit_func(unitary, num_qbits, target_qbit, None if control_qbit == target_qbit else control_qbit, (make_u3(param) if control_qbit is None or control_qbit==target_qbit else make_cry(param)).astype(unitary.dtype))
     return unitary
+def poly_cost_func():
+    from qiskit import QuantumCircuit, transpile
+    from qgd_python.utils import get_unitary_from_qiskit_circuit
+    import sys
+    filename = "/home/morse/ibm_qx_mapping/examples/" + 'ham3_102' + ".qasm"
+    qc_trial = QuantumCircuit.from_qasm_file( filename )
+    qc_trial = transpile(qc_trial, optimization_level=3, basis_gates=['cz', 'cx', 'u3'], layout_method='sabre')
+    Umtx_orig = get_unitary_from_qiskit_circuit( qc_trial )
+    #Umtx_orig = np.eye(1<<3, dtype=np.complex128)
+    levels = 1
+    from qgd_python.decomposition.qgd_N_Qubit_Decomposition_adaptive import qgd_N_Qubit_Decomposition_adaptive
+    cDecompose = qgd_N_Qubit_Decomposition_adaptive( Umtx_orig.conj().T, level_limit_max=5, level_limit_min=0 )
+    for idx in range(levels):
+        cDecompose.add_Adaptive_Layers()
+    cDecompose.add_Finalyzing_Layer_To_Gate_Structure()
+    cDecompose.set_Cost_Function_Variant(0)
+    num_of_parameters = cDecompose.get_Parameter_Num()
+    xn = np.random.random(num_of_parameters)*2*np.pi #np.ones(num_of_parameters, dtype=np.float64)*np.pi/2
+    cDecompose.set_Optimized_Parameters(xn)
+    cDecompose.Prepare_Gates_To_Export()
+    gates = cDecompose.get_Gates()
+    #target_qbits, control_qbits = get_gate_structure(levels, qbit_num)
+    target_qbits = np.array([x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
+    control_qbits = np.array([x['control_qbit'] if 'control_qbit' in x else x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
+    params = np.array([[x['Theta']/2, 0 if x['type'] == 'CRY' else x['Phi'], 0 if x['type'] == 'CRY' else x['Lambda']] for x in reversed(gates)], dtype=np.float64)
+    result = process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)
+    print(cDecompose.Optimization_Problem(xn), 1.0-np.trace(np.real(result))/Umtx_orig.shape[0])
 import itertools, collections
 sym_expand = True
 class SymExpr:
+    def makeSymExpr(newsums):
+        newsums = list(itertools.chain.from_iterable([x.sums if isinstance(x, SymExpr) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 0.0, newsums)]))
+        #cos(x)=sin(x+pi/2), sin(x)=cos(x-pi/2)
+        allsums = {}
+        for i, sum in enumerate(newsums):
+            if isinstance(sum, SymTerm):
+                for term in sum.var:
+                    if isinstance(term, SymFunc) and term.func in ["cos", "sin"]:
+                        if not term in allsums: allsums[term] = set()
+                        allsums[term].add(i)
+            elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                if not sum in allsums: allsums[sum] = set()
+                allsums[sum].add(i)
+        consumed = set()
+        for sum in sorted(allsums):
+            allsums[sum] -= consumed        
+            if len(allsums[sum]) >= 2:
+                idxs = list(allsums[sum])
+                #print(sum, [newsums[idx] for idx in idxs])
+                newsums[idxs[0]] = SymTerm.makeSymTerm([sum, SymExpr.makeSymExpr([SymTerm.makeSymTerm([x for x in newsums[idx].var if not isinstance(x, SymFunc) or not x.func in ["cos", "sin"] or x != sum]) for idx in idxs])])
+                #print(newsums[idxs[0]])
+                for idx in idxs[1:]: newsums[idx] = None
+            consumed |= allsums[sum]
+        newsums = list(filter(lambda x: not x is None, newsums))
+        """
+        allsums = {}
+        for i, sum in enumerate(newsums):
+            if isinstance(sum, SymTerm):
+                allsums[(tuple(term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]))] = i
+            elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                allsums[((sum,))] = i
+        #assert all([np.isclose(np.sqrt(a*a+b*b)*np.sin(z+np.arctan2(b,a)),a*np.sin(z)+b*np.cos(z)) for a, b, z in 2*np.pi*np.random.rand(1000,3)])
+        for sum in allsums: #f(x)=a*sin(x)+b*cos(x)=A sin(x+phi) where A=sqrt(a*a+b*b), phi=arctan(b/a)
+            if newsums[allsums[sum]] is None: continue
+            for i, term in enumerate(sum):
+                test = (sum[:i] + (SymFunc("cos" if term.func == "sin" else "sin", term.sym),) + sum[i+1:])
+                if test in allsums and not newsums[allsums[test]] is None:
+                    assert not isinstance(newsums[allsums[sum]], SymFunc) and not isinstance(newsums[allsums[test]], SymFunc)  
+                    a = [t for t in newsums[allsums[test]].var if not isinstance(t, SymFunc)]
+                    b = [t for t in newsums[allsums[sum]].var if not isinstance(t, SymFunc)]
+                    a = (a[0] if len(a) == 1 else SymTerm.makeSymTerm(a)) if len(a) != 0 else SymConst(1.0)
+                    b = (b[0] if len(b) == 1 else SymTerm.makeSymTerm(b)) if len(b) != 0 else SymConst(1.0)
+                    if term.func == "sin": a, b = b, a
+                    print(newsums[allsums[test]], newsums[allsums[sum]], a, b, sum, test)
+                    newsums[allsums[test]] = None
+                    newsums[allsums[sum]] = SymTerm.makeSymTerm(sum[:i] + (SymTerm.makeSymTerm([SymFunc("sqrt", SymExpr.makeSymExpr([SymTerm.makeSymTerm([a, a]), SymTerm.makeSymTerm([b, b])])), SymFunc("sin", SymExpr.makeSymExpr([term.sym, SymFunc("atan", [b, a])]))]),) + sum[i+1:])
+                    print(newsums[allsums[sum]])
+        newsums = list(filter(lambda x: not x is None, newsums))
+        """
+        if len(newsums) == 0: return SymConst(0.0)
+        return SymExpr(newsums) if len(newsums) > 1 else newsums[0]
     def __init__(self, newsums):
-        self.sums = list(itertools.chain.from_iterable([x.sums if isinstance(x, SymExpr) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 0, newsums)]))
+        assert len(newsums) >= 2
+        self.sums = newsums
     def __add__(self, other):
-        return SymExpr([self, other])
+        return SymExpr.makeSymExpr([self, other])
     def __sub__(self, other):
-        return SymExpr([self, -other])
+        return SymExpr.makeSymExpr([self, -other])
     def __mul__(self, other):
-        if not sym_expand: return SymTerm([self, other])
+        if not sym_expand: return SymTerm.makeSymTerm([self, other])
         newsums = []
         for sum in self.sums:
             newsums.append(sum * other)
-        return SymExpr(newsums)
+        return SymExpr.makeSymExpr(newsums)
     def __neg__(self):
-        return SymExpr([-x for x in self.sums])
+        return SymExpr.makeSymExpr([-x for x in self.sums])
     def apply_to(self, symdict):
         return np.sum(x.apply_to(symdict) for x in self.sums)
+    def num_ops(self):
+        return len(self.sums) + sum(x.num_ops() for x in self.sums if isinstance(x, SymTerm))
     def __repr__(self):
         return str(self)
     def __str__(self):
-        return '+'.join(str(x) for x in self.sums)
+        #if sym_expand: return '+'.join(str(x) for x in self.sums)
+        return '(' + '+'.join(str(x) for x in self.sums) + ')'
 class SymTerm:
-    def __init__(self, newvar):
+    def makeSymTerm(newvar):
+        newvar = list(itertools.chain.from_iterable([x.var if isinstance(x, SymTerm) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 1.0, newvar)]))
         #if sym_expand: assert all(not isinstance(x, SymExpr) for x in newvar)
-        negidx = {i for i, x in enumerate(newvar) if isinstance(x, SymFunc) and x.func == 'neg'}
-        if len(negidx) > 1:
-            if (len(negidx) & 1) != 0: negidx.pop()
-            newvar = [-x if i in negidx else x for i, x in enumerate(newvar)] 
-        self.var = list(itertools.chain.from_iterable([x.var if isinstance(x, SymTerm) else [x] for x in newvar]))
+        consts = {k: list(g) for k, g in itertools.groupby(sorted(newvar, key=lambda x: isinstance(x, SymConst)),
+            key=lambda x: isinstance(x, SymConst))}
+        if True in consts and len(consts[True])>1:
+            newvar = [SymConst(np.prod([x.c for x in consts[True]]))] + (consts[False] if False in consts else [])
+        if len(newvar) == 0: return SymConst(1.0)
+        return SymTerm(newvar) if len(newvar) > 1 else newvar[0]
+    def __init__(self, newvar):
+        assert len(newvar) >= 2
+        self.var = newvar        
     def __add__(self, other):
-        return SymExpr([self, other])
+        return SymExpr.makeSymExpr([self, other])
     def __sub__(self, other):
-        return SymExpr([self, -other])
+        return SymExpr.makeSymExpr([self, -other])
     def __mul__(self, other):
-        if isinstance(other, SymExpr): return other * self
-        else: return SymTerm([self, other])
+        if sym_expand and isinstance(other, SymExpr): return other * self
+        else: return SymTerm.makeSymTerm([self, other])
     def apply_to(self, symdict):
         return np.prod([x.apply_to(symdict) for x in self.var])
-    def __neg__(self):
-        return SymTerm([-self.var[0]] + self.var[1:])
-    def __repr__(self):
-        return str(self)
-    def __str__(self):
-        return '*'.join(str(x) for x in self.var)
+    def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0)] + self.var)
+    def num_ops(self):
+        return len(self.var) + sum(x.num_ops() for x in self.var if isinstance(x, SymExpr))
+    def __repr__(self): return str(self)
+    def __str__(self): return '*'.join(str(x) for x in self.var)
 class SymConst:
     def __init__(self, c):
         self.c = c
     def __add__(self, other):
         if self.c == 0: return other
-        return SymExpr([self, other])
+        return SymExpr.makeSymExpr([self, other])
     def __sub__(self, other):
         if self.c == 0: return -other
-        return SymExpr([self, -other])
+        return SymExpr.makeSymExpr([self, -other])
     def __mul__(self, other):
-        if self.c == 0: return self
-        elif self.c == 1: return other
-        return SymTerm([self, other])
-    def __neg__(self):
-        return SymConst(-self.c)
-    def apply_to(self, symdict):
-        return self.c
-    def __repr__(self):
-        return str(self)
-    def __str__(self):
-        return str(self.c)
+        if self.c == 0.0: return self
+        elif self.c == 1.0: return other
+        elif isinstance(other, SymConst): return SymConst(self.c * other.c)
+        return SymTerm.makeSymTerm([self, other])
+    def __neg__(self): return SymConst(-self.c)
+    def apply_to(self, symdict): return self.c
+    def __repr__(self): return str(self)
+    def __str__(self): return str(self.c)
 class SymSymbol:
-    def __init__(self, sym):
-        self.sym = sym
-    def __add__(self, other):
-        return SymExpr([self, other])
-    def __neg__(self):
-        return SymFunc('neg', self)
-    def apply_to(self, symdict):
-        return symdict[self.sym]
-    def __repr__(self):
-        return str(self)
-    def __str__(self):
-        return self.sym
-class SymFunc: #func in ['cos', 'sin', 'neg']
+    SymOrder = {'ϴ': 0, 'φ': 1, 'λ': 2}
+    def __init__(self, sym): self.sym = sym
+    def __add__(self, other): return SymExpr.makeSymExpr([self, other])
+    def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0), self])
+    def apply_to(self, symdict): return symdict[self.sym]
+    def __hash__(self): return hash(self.sym)
+    def __lt__(self, other): return SymSymbol.SymOrder[self.sym[0]] < SymSymbol.SymOrder[other.sym[0]] if int(self.sym[1:]) == int(other.sym[1:]) else int(self.sym[1:]) < int(other.sym[1:])
+    def __eq__(self, other): return self.sym == other.sym
+    def __repr__(self): return str(self)
+    def __str__(self): return self.sym
+class SymFunc: #func in ['cos', 'sin', 'sqrt', 'atan']
     def __init__(self, func, sym):
         self.func, self.sym = func, sym
     def __mul__(self, other):
-        if isinstance(other, SymExpr): return other * self
-        return SymTerm([self, other])
-    def __neg__(self):
-        if self.func == 'neg': return self.sym
-        return SymFunc('neg', self)
+        if sym_expand and isinstance(other, SymExpr): return other * self
+        return SymTerm.makeSymTerm([self, other])
+    def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0), self])
     def apply_to(self, symdict):
-        funcs = {'sin': np.sin, 'cos': np.cos, 'neg': np.negative} 
-        return funcs[self.func](self.sym.apply_to(symdict)) 
-    def __repr__(self):
-        return str(self)
-    def __str__(self):
-        return ('-' + str(self.sym) if self.func == 'neg' else self.func + '(' + str(self.sym) + ')')
+        funcs = {'sin': np.sin, 'cos': np.cos, 'sqrt': np.sqrt, 'atan': np.arctan2}
+        if isinstance(self.sym, list): return funcs[self.func](*(x.apply_to(symdict) for x in self.sym)) 
+        return funcs[self.func](self.sym.apply_to(symdict))
+    def __hash__(self): return hash((self.func, *self.sym)) if isinstance(self.sym, list) else hash((self.func, self.sym))
+    def __lt__(self, other): return self.sym < other.sym
+    def __eq__(self, other): return self.func == other.func and self.sym == other.sym
+    def __repr__(self): return str(self)
+    def __str__(self): return self.func + '(' + (",".join([str(x) for x in self.sym]) if isinstance(self.sym, list) else str(self.sym)) + ')'
 def make_u3_sym(parameters):
     cosTheta, sinTheta = SymFunc('cos', parameters[0]),  SymFunc('sin', parameters[0])
+    cosPhi, sinPhi = SymFunc('cos', parameters[1]), SymFunc('sin', parameters[1])
+    cosLambda, sinLambda = SymFunc('cos', parameters[2]), SymFunc('sin', parameters[2])
+    #SymFunc('cos', parameters[1]+parameters[2]), SymFunc('sin', parameters[1]+parameters[2])
+    #cos(a+b)=cos(a)cos(b)-sin(a)sin(b)
+    #sin(a+b)=sin(a)cos(b)+cos(a)sin(b)
     return [[(cosTheta, SymConst(0)),
-             (-SymFunc('cos', parameters[2]) * sinTheta, -SymFunc('sin', parameters[2]) * sinTheta)],
-            [(SymFunc('cos', parameters[1]) * sinTheta, SymFunc('sin', parameters[1]) * sinTheta),
-             (SymFunc('cos', parameters[1]+parameters[2]) * cosTheta, SymFunc('sin', parameters[1]+parameters[2]) * cosTheta)]] 
+             (-cosLambda * sinTheta, -sinLambda * sinTheta)],
+            [(cosPhi * sinTheta, sinPhi * sinTheta),
+             ((cosPhi*cosLambda-sinPhi*sinLambda) * cosTheta, (sinPhi*cosLambda+cosPhi*sinLambda) * cosTheta)]] 
 def make_ry_sym(parameters):
     cosTheta, sinTheta = SymFunc('cos', parameters[0]), SymFunc('sin', parameters[0])
     return [[(cosTheta, SymConst(0)),
@@ -788,13 +996,14 @@ def twoByTwoFloat_sym(A, B):
     for j in range(2):
         for i in range(len(B[0])):
             res[j][i][0] = (A[j][0][0]*B[0][i][0]-A[j][0][1]*B[0][i][1]) + (A[j][1][0]*B[1][i][0]-A[j][1][1]*B[1][i][1])
-            res[j][i][1] = (A[j][0][0]*B[0][i][1]-A[j][0][1]*B[0][i][0]) + (A[j][1][0]*B[1][i][1]+A[j][1][1]*B[1][i][0])
+            res[j][i][1] = (A[j][0][0]*B[0][i][1]+A[j][0][1]*B[0][i][0]) + (A[j][1][0]*B[1][i][1]+A[j][1][1]*B[1][i][0])
     return res
 def apply_to_qbit_loop_sym(unitary, num_qbits, target_qbit, control_qbit, gate):
     pow2qb = 1 << num_qbits
     t = np.roll(np.arange(num_qbits), target_qbit)
     idxs = np.arange(pow2qb).reshape(*([2]*num_qbits)).transpose(t).reshape(-1, 2)
     for pair in (idxs if control_qbit is None else idxs[(idxs[:,0] & (1<<control_qbit)) != 0,:]):
+        print(pair)
         unitary[pair[0]], unitary[pair[1]] = twoByTwoFloat_sym(gate, [unitary[pair[0]], unitary[pair[1]]])
     return unitary
 def process_gates_sym(unitary, num_qbits, parameters, target_qbits, control_qbits):
@@ -829,18 +1038,22 @@ def sym_execute():
     control_qbits = np.array([x['control_qbit'] if 'control_qbit' in x else x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
     params = np.array([[x['Theta']/2, 0 if x['type'] == 'CRY' else x['Phi'], 0 if x['type'] == 'CRY' else x['Lambda']] for x in reversed(gates)], dtype=np.float64)
     #print(1-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/Umtx_orig.shape[0], cDecompose.Optimization_Problem(xn), cDecompose.Optimization_Problem_Combined(xn)[0])
+    Umtx_orig = np.random.rand(*Umtx_orig.shape) + np.random.rand(*Umtx_orig.shape)*1j
+    num_gates = 3
     uni_sym = [[(SymSymbol('r' + str(i) + '_' + str(j)), SymSymbol('i' + str(i) + '_' + str(j))) for j in range(Umtx_orig.shape[1])] for i in range(Umtx_orig.shape[0])]
-    param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates[:5])))]
-    target_sym = process_gates_sym(uni_sym, Umtx_orig.shape[0].bit_length()-1, param_sym, target_qbits[-5:], control_qbits[-5:])
+    param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates[:num_gates])))]
+    target_sym = process_gates_sym(uni_sym, Umtx_orig.shape[0].bit_length()-1, param_sym, target_qbits[-num_gates:], control_qbits[-num_gates:])
     symdict = dict(collections.ChainMap(*[{'r' + str(i) + '_' + str(j): np.real(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])},
                {'i' + str(i) + '_' + str(j): -np.imag(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])}] +
-               [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates[:5])))]))
-    print(target_sym[0][0][0], target_sym[0][0][1])
-    print(target_sym[0][0][0].apply_to(symdict))
-    print(target_sym[0][0][1].apply_to(symdict))
-    print(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params[-5:], target_qbits[-5:], control_qbits[-5:])[0,0])
-    print(len(target_sym[0][0][0].sums))
+               [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates[:num_gates])))]))
+    for i in range(Umtx_orig.shape[0]):               
+        print(target_sym[i][i][0], target_sym[i][i][1])
+        print(target_sym[i][i][0].apply_to(symdict))
+        print(target_sym[i][i][1].apply_to(symdict))
+        print(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params[-num_gates:], target_qbits[-num_gates:], control_qbits[-num_gates:])[i,i])
+        print(len(target_sym[i][i][0].sums), target_sym[i][i][0].num_ops())
 #train_model(num_of_parameters, 100000)
 #transformer_model()
 #newton_method()
 sym_execute()
+#poly_cost_func()
