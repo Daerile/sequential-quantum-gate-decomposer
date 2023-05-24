@@ -900,26 +900,39 @@ class SymExpr:
         return SymExpr(newsums) if len(newsums) > 1 else newsums[0]
     def partial_deriv_solver(functions, symbols, costfunc): #assert len(functions) == len(symbols)
         #assumes the function is bounded and the extreme value theorem is satisfied
-        #def partial_deriv_solver_inner(functions, symbols):
-        allsums = {} #factor one parameter, earliest first
-        for i, sum in enumerate(functions[0].sums):
-            if isinstance(sum, SymTerm):
-                for j, term in enumerate(sum.var):                    
-                    if isinstance(term, SymFunc) and term.func in ["cos", "sin"] and term.sym == symbols[0]:
-                        if not term in allsums: allsums[term.func] = set()
-                        allsums[term.func].add((i, j))
-                        break
-                else: assert False
-            elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
-                if not sum in allsums: allsums[sum] = set()
-                allsums[sum.func].add((i, j))
-            else: assert False, (sum, symbols)
-        b = SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(functions[0].sums[k].var) if j != l]) for k, l in allsums['cos']])
-        a = SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(functions[0].sums[k].var) if j != l]) for k, l in allsums['sin']])
-        if len(symbols) == 1: #x=(-1)^k*arcsin(y)+PI*k if sin(x)=y
-            value = -SymFunc('atan', [b, a]).apply_to(None)
-            print(costfunc(symbols[0], value), costfunc(symbols[0], np.pi+value))
-            return value
+        def partial_deriv_solver_inner(functions, symbols):
+            b, a = [], []
+            for func in functions:
+                allsums = {} #factor one parameter, earliest first            
+                for i, sum in enumerate(func.sums):
+                    if isinstance(sum, SymTerm):
+                        for j, term in enumerate(sum.var):
+                            if isinstance(term, SymFunc) and term.func in ["cos", "sin"] and term.sym == symbols[0]:
+                                if not term in allsums: allsums[term.func] = set()
+                                allsums[term.func].add((i, j))
+                                break
+                        else: assert False
+                    elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                        if not sum in allsums: allsums[sum] = set()
+                        allsums[sum.func].add((i, j))
+                    else: assert False, (sum, symbols)
+                b.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(func.sums[k].var) if j != l]) for k, l in allsums['cos']]))
+                a.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(func.sums[k].var) if j != l]) for k, l in allsums['sin']]))
+            if len(symbols) == 1: #x=(-1)^k*arcsin(y)+PI*k if sin(x)=y
+                value = -SymFunc('atan', [b[0], a[0]]).apply_to(None)
+                return [[value], [np.pi+value]]
+            else:
+                newfuncs = []
+                for i in range(1, len(functions)): #b0/a0=bi/ai
+                    newfuncs.append(b[0]*a[i]-a[0]*b[i])
+                print(b, a)
+                print(newfuncs)
+                newsols = partial_deriv_solver_inner(newfuncs, symbols[1:])
+                combined = [[-SymFunc('atan', [b[0], a[0]]).apply_to({sym: solution[i] for sym in enumerate(symbols[1:])})] + solution for solution in newsols]
+                combined += [[x[0]+np.pi] + x[1:] for x in combined]
+                return combined
+        solutions = partial_deriv_solver_inner(functions, symbols)
+        return min((solution for solution in solutions), key=lambda x: costfunc(symbols, x))
     def __init__(self, newsums):
         assert len(newsums) >= 2
         self.sums = newsums
@@ -1164,17 +1177,20 @@ def sym_execute():
     param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates)))]
     param_symdict = dict(collections.ChainMap(*
                [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates)))]))
-    for i in itertools.combinations(range(num_of_parameters), 1):
+    for i in itertools.combinations(range(num_of_parameters), 2):
         minsym, paramidx = sym_min_param(Umtx_orig.shape[0].bit_length()-1, uni_stamped, target_qbits, control_qbits, param_stamped, param_sym, {*i})
         print(minsym, paramidx)
-        def costfunc(sym, value):
-            oldval = param_symdict[sym.sym]
-            param_symdict[sym.sym] = value
+        def costfunc(syms, value):
+            oldvals = {sym.sym: param_symdict[sym.sym] for sym in syms}
+            for i, sym in enumerate(syms):
+                param_symdict[sym.sym] = value[i]
             cost = 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits)
-            param_symdict[sym.sym] = oldval
+            for sym in syms:
+                param_symdict[sym.sym] = oldvals[sym.sym]
             return cost
         partials = [minsym.partial_deriv(param_sym[j][k]) for j, k in paramidx]
-        print(SymExpr.partial_deriv_solver(partials, [param_sym[j][k] for j, k in paramidx], costfunc))
+        symbols = [param_sym[j][k] for j, k in paramidx]
+        print(costfunc(symbols, SymExpr.partial_deriv_solver(partials, symbols, costfunc)))
         print(cDecompose.Optimization_Problem(xn), 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits))
     #print(1.0-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/(1<<num_qbits))
     assert False
