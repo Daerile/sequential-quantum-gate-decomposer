@@ -824,59 +824,102 @@ def poly_cost_func():
     result = process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)
     print(cDecompose.Optimization_Problem(xn), 1.0-np.trace(np.real(result))/Umtx_orig.shape[0])
 import itertools, collections
-sym_expand = True
+sym_expand, use_tosinwave = True, False
 class SymExpr:
     def makeSymExpr(newsums):
         newsums = list(itertools.chain.from_iterable([x.sums if isinstance(x, SymExpr) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 0.0, newsums)]))
+        consts = {k: list(g) for k, g in itertools.groupby(sorted(newsums, key=lambda x: isinstance(x, SymConst)),
+            key=lambda x: isinstance(x, SymConst))}
+        if True in consts and len(consts[True])>1:
+            newsums = [SymConst(np.sum([x.c for x in consts[True]]))] + (consts[False] if False in consts else [])
         #cos(x)=sin(x+pi/2), sin(x)=cos(x-pi/2)
+        #combine like terms
         allsums = {}
         for i, sum in enumerate(newsums):
             if isinstance(sum, SymTerm):
-                for term in sum.var:
-                    if isinstance(term, SymFunc) and term.func in ["cos", "sin"]:
-                        if not term in allsums: allsums[term] = set()
-                        allsums[term].add(i)
+                t = tuple([term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]])
+                if len(t) != 0:
+                    if not t in allsums: allsums[t] = set()
+                    allsums[t].add(i)
             elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
                 if not sum in allsums: allsums[sum] = set()
                 allsums[sum].add(i)
-        consumed = set()
-        for sum in sorted(allsums):
-            allsums[sum] -= consumed        
+        for sum in allsums:
             if len(allsums[sum]) >= 2:
                 idxs = list(allsums[sum])
-                #print(sum, [newsums[idx] for idx in idxs])
-                newsums[idxs[0]] = SymTerm.makeSymTerm([sum, SymExpr.makeSymExpr([SymTerm.makeSymTerm([x for x in newsums[idx].var if not isinstance(x, SymFunc) or not x.func in ["cos", "sin"] or x != sum]) for idx in idxs])])
-                #print(newsums[idxs[0]])
+                newsums[idxs[0]] = SymTerm.makeSymTerm([*sum, SymExpr.makeSymExpr([SymTerm.makeSymTerm([x for x in newsums[idx].var if not isinstance(x, SymFunc) or not x.func in ["cos", "sin"]]) for idx in idxs])])
                 for idx in idxs[1:]: newsums[idx] = None
-            consumed |= allsums[sum]
         newsums = list(filter(lambda x: not x is None, newsums))
-        """
-        allsums = {}
-        for i, sum in enumerate(newsums):
-            if isinstance(sum, SymTerm):
-                allsums[(tuple(term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]))] = i
-            elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
-                allsums[((sum,))] = i
-        #assert all([np.isclose(np.sqrt(a*a+b*b)*np.sin(z+np.arctan2(b,a)),a*np.sin(z)+b*np.cos(z)) for a, b, z in 2*np.pi*np.random.rand(1000,3)])
-        for sum in allsums: #f(x)=a*sin(x)+b*cos(x)=A sin(x+phi) where A=sqrt(a*a+b*b), phi=arctan(b/a)
-            if newsums[allsums[sum]] is None: continue
-            for i, term in enumerate(sum):
-                test = (sum[:i] + (SymFunc("cos" if term.func == "sin" else "sin", term.sym),) + sum[i+1:])
-                if test in allsums and not newsums[allsums[test]] is None:
-                    assert not isinstance(newsums[allsums[sum]], SymFunc) and not isinstance(newsums[allsums[test]], SymFunc)  
-                    a = [t for t in newsums[allsums[test]].var if not isinstance(t, SymFunc)]
-                    b = [t for t in newsums[allsums[sum]].var if not isinstance(t, SymFunc)]
-                    a = (a[0] if len(a) == 1 else SymTerm.makeSymTerm(a)) if len(a) != 0 else SymConst(1.0)
-                    b = (b[0] if len(b) == 1 else SymTerm.makeSymTerm(b)) if len(b) != 0 else SymConst(1.0)
-                    if term.func == "sin": a, b = b, a
-                    print(newsums[allsums[test]], newsums[allsums[sum]], a, b, sum, test)
-                    newsums[allsums[test]] = None
-                    newsums[allsums[sum]] = SymTerm.makeSymTerm(sum[:i] + (SymTerm.makeSymTerm([SymFunc("sqrt", SymExpr.makeSymExpr([SymTerm.makeSymTerm([a, a]), SymTerm.makeSymTerm([b, b])])), SymFunc("sin", SymExpr.makeSymExpr([term.sym, SymFunc("atan", [b, a])]))]),) + sum[i+1:])
-                    print(newsums[allsums[sum]])
-        newsums = list(filter(lambda x: not x is None, newsums))
-        """
+        if False and sym_expand:
+            allsums = {} #parameter ordering
+            for i, sum in enumerate(newsums):
+                if isinstance(sum, SymTerm):
+                    for term in sum.var:
+                        if isinstance(term, SymFunc) and term.func in ["cos", "sin"]:
+                            if not term in allsums: allsums[term] = set()
+                            allsums[term].add(i)
+                elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                    if not sum in allsums: allsums[sum] = set()
+                    allsums[sum].add(i)
+            consumed = set()
+            for sum in sorted(allsums):
+                allsums[sum] -= consumed        
+                if len(allsums[sum]) >= 2:
+                    idxs = list(allsums[sum])
+                    #print(sum, [newsums[idx] for idx in idxs])
+                    newsums[idxs[0]] = SymTerm.makeSymTerm([sum, SymExpr.makeSymExpr([SymTerm.makeSymTerm([x for x in newsums[idx].var if not isinstance(x, SymFunc) or not x.func in ["cos", "sin"] or x != sum]) for idx in idxs])])
+                    #print(newsums[idxs[0]])
+                    for idx in idxs[1:]: newsums[idx] = None
+                consumed |= allsums[sum]
+            newsums = list(filter(lambda x: not x is None, newsums))
+            if use_tosinwave:
+                allsums = {}
+                for i, sum in enumerate(newsums):
+                    if isinstance(sum, SymTerm):
+                        allsums[(tuple(term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]))] = i
+                    elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                        allsums[((sum,))] = i
+                #assert all([np.isclose(np.sqrt(a*a+b*b)*np.sin(z+np.arctan2(b,a)),a*np.sin(z)+b*np.cos(z)) for a, b, z in 2*np.pi*np.random.rand(1000,3)])
+                for sum in allsums: #f(x)=a*sin(x)+b*cos(x)=A sin(x+phi) where A=sqrt(a*a+b*b), phi=arctan(b/a)
+                    if newsums[allsums[sum]] is None: continue
+                    for i, term in enumerate(sum):
+                        test = (sum[:i] + (SymFunc("cos" if term.func == "sin" else "sin", term.sym),) + sum[i+1:])
+                        if test in allsums and not newsums[allsums[test]] is None:
+                            assert not isinstance(newsums[allsums[sum]], SymFunc) and not isinstance(newsums[allsums[test]], SymFunc)  
+                            a = [t for t in newsums[allsums[test]].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"]]
+                            b = [t for t in newsums[allsums[sum]].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"]]
+                            a = (a[0] if len(a) == 1 else SymTerm.makeSymTerm(a)) if len(a) != 0 else SymConst(1.0)
+                            b = (b[0] if len(b) == 1 else SymTerm.makeSymTerm(b)) if len(b) != 0 else SymConst(1.0)
+                            if term.func == "sin": a, b = b, a
+                            newsums[allsums[test]] = None
+                            #newsums[allsums[sum]] = SymTerm.makeSymTerm(sum[:i] + (SymTerm.makeSymTerm([SymFunc("sqrt", SymExpr.makeSymExpr([SymTerm.makeSymTerm([a, a]), SymTerm.makeSymTerm([b, b])])), SymFunc("sin", SymExpr.makeSymExpr([term.sym, SymFunc("atan", [b, a])]))]),) + sum[i+1:])
+                            newsums[allsums[sum]] = SymTerm.makeSymTerm(sum[:i] + (SymFunc('tosinwave', [term.sym, a, b]),) + sum[i+1:])
+                            #print(newsums[allsums[sum]])
+                newsums = list(filter(lambda x: not x is None, newsums))
         if len(newsums) == 0: return SymConst(0.0)
         return SymExpr(newsums) if len(newsums) > 1 else newsums[0]
+    def partial_deriv_solver(functions, symbols, costfunc): #assert len(functions) == len(symbols)
+        #assumes the function is bounded and the extreme value theorem is satisfied
+        #def partial_deriv_solver_inner(functions, symbols):
+        allsums = {} #factor one parameter, earliest first
+        for i, sum in enumerate(functions[0].sums):
+            if isinstance(sum, SymTerm):
+                for j, term in enumerate(sum.var):                    
+                    if isinstance(term, SymFunc) and term.func in ["cos", "sin"] and term.sym == symbols[0]:
+                        if not term in allsums: allsums[term.func] = set()
+                        allsums[term.func].add((i, j))
+                        break
+                else: assert False
+            elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
+                if not sum in allsums: allsums[sum] = set()
+                allsums[sum.func].add((i, j))
+            else: assert False, (sum, symbols)
+        b = SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(functions[0].sums[k].var) if j != l]) for k, l in allsums['cos']])
+        a = SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(functions[0].sums[k].var) if j != l]) for k, l in allsums['sin']])
+        if len(symbols) == 1: #x=(-1)^k*arcsin(y)+PI*k if sin(x)=y
+            value = -SymFunc('atan', [b, a]).apply_to(None)
+            print(costfunc(symbols[0], value), costfunc(symbols[0], np.pi+value))
+            return value
     def __init__(self, newsums):
         assert len(newsums) >= 2
         self.sums = newsums
@@ -892,10 +935,17 @@ class SymExpr:
         return SymExpr.makeSymExpr(newsums)
     def __neg__(self):
         return SymExpr.makeSymExpr([-x for x in self.sums])
+    def __hash__(self): return hash(tuple(self.sums))
+    def __eq__(self, other): return self.sums == other.sums
     def apply_to(self, symdict):
         return np.sum(x.apply_to(symdict) for x in self.sums)
     def num_ops(self):
-        return len(self.sums) + sum(x.num_ops() for x in self.sums if isinstance(x, SymTerm))
+        ops = {'+': len(self.sums)-1, '*': 0, 'tosinwave': 0}
+        for innerops in (x.num_ops() for x in self.sums if isinstance(x, (SymTerm, SymFunc))):
+            ops['+'] += innerops['+']; ops['*'] += innerops['*']; ops['tosinwave'] += innerops['tosinwave']
+        return ops
+    def partial_deriv(self, symbol):
+        return SymExpr.makeSymExpr([x.partial_deriv(symbol) for x in self.sums])
     def __repr__(self):
         return str(self)
     def __str__(self):
@@ -904,6 +954,7 @@ class SymExpr:
 class SymTerm:
     def makeSymTerm(newvar):
         newvar = list(itertools.chain.from_iterable([x.var if isinstance(x, SymTerm) else [x] for x in filter(lambda x: not isinstance(x, SymConst) or x.c != 1.0, newvar)]))
+        if any(isinstance(x, SymConst) and x.c == 0.0 for x in newvar): return SymConst(0.0)
         #if sym_expand: assert all(not isinstance(x, SymExpr) for x in newvar)
         consts = {k: list(g) for k, g in itertools.groupby(sorted(newvar, key=lambda x: isinstance(x, SymConst)),
             key=lambda x: isinstance(x, SymConst))}
@@ -925,7 +976,12 @@ class SymTerm:
         return np.prod([x.apply_to(symdict) for x in self.var])
     def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0)] + self.var)
     def num_ops(self):
-        return len(self.var) + sum(x.num_ops() for x in self.var if isinstance(x, SymExpr))
+        ops = {'+': 0, '*': (1 if any(isinstance(x, SymConst) and x.c != -1.0 or isinstance(x, SymSymbol) for x in self.var) else 0) + sum(1 for x in self.var if not isinstance(x, (SymConst, SymSymbol)))-1, 'tosinwave': 0}
+        for innerops in (x.num_ops() for x in self.var if isinstance(x, (SymExpr, SymFunc))):
+            ops['+'] += innerops['+']; ops['*'] += innerops['*']; ops['tosinwave'] += innerops['tosinwave']
+        return ops
+    def partial_deriv(self, symbol): #product rule
+        return SymExpr.makeSymExpr([SymTerm.makeSymTerm(self.var[:i] + [x.partial_deriv(symbol)] + self.var[i+1:]) for i, x in enumerate(self.var)])
     def __repr__(self): return str(self)
     def __str__(self): return '*'.join(str(x) for x in self.var)
 class SymConst:
@@ -941,9 +997,10 @@ class SymConst:
         if self.c == 0.0: return self
         elif self.c == 1.0: return other
         elif isinstance(other, SymConst): return SymConst(self.c * other.c)
-        return SymTerm.makeSymTerm([self, other])
+        return other * self
     def __neg__(self): return SymConst(-self.c)
     def apply_to(self, symdict): return self.c
+    def partial_deriv(self, symbol): return SymConst(0.0)
     def __repr__(self): return str(self)
     def __str__(self): return str(self.c)
 class SymSymbol:
@@ -952,40 +1009,76 @@ class SymSymbol:
     def __add__(self, other): return SymExpr.makeSymExpr([self, other])
     def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0), self])
     def apply_to(self, symdict): return symdict[self.sym]
+    def partial_deriv(self, symbol): return SymConst(1.0) if symbol == self else SymConst(0.0)
     def __hash__(self): return hash(self.sym)
     def __lt__(self, other): return SymSymbol.SymOrder[self.sym[0]] < SymSymbol.SymOrder[other.sym[0]] if int(self.sym[1:]) == int(other.sym[1:]) else int(self.sym[1:]) < int(other.sym[1:])
     def __eq__(self, other): return self.sym == other.sym
     def __repr__(self): return str(self)
     def __str__(self): return self.sym
-class SymFunc: #func in ['cos', 'sin', 'sqrt', 'atan']
+class SymFunc:
+    FuncOrder = {'sin': 0, 'cos': 1, 'sqrt': 2, 'atan': 3, 'tosinwave': 4, 'pi': 5}
+    FuncNames = {'sin': 'sin', 'cos': 'cos', 'sqrt': '√', 'atan': 'atan', 'pi': 'π'}
+    def makeSymFunc(func, sym):
+        if func == 'sin' and isinstance(sym, SymConst): return SymConst(np.sin(sym.c))
+        if func == 'cos' and isinstance(sym, SymConst): return SymConst(np.cos(sym.c))
+        if func == 'sqrt' and isinstance(sym, SymConst): return SymConst(np.sqrt(sym.c))
+        if func == 'atan' and isinstance(sym[0], SymConst) and isinstance(sym[1], SymConst): return SymConst(np.arctan2(sym[0].c, sym[1].c))
+        if func == 'tosinwave':
+            if isinstance(sym[0], SymConst) and isinstance(sym[1], SymConst) and isinstance(sym[2], SymConst):
+                return SymConst(SymFunc.tosinwave(sym[0].c, sym[1].c, sym[2].c))
+            if isinstance(sym[1], SymConst) and isinstance(sym[2], SymConst):
+                return SymTerm([SymFunc('sqrt', sym[1].c*sym[1].c+sym[2].c*sym[2].c), SymFunc('sin', SymTerm([sym[0], np.arctan2(sym[2].c, sym[1].c)]))])
+        return SymFunc(func, sym)
     def __init__(self, func, sym):
         self.func, self.sym = func, sym
+    def __add__(self, other):
+        return SymExpr.makeSymExpr([self, other])
+    def __sub__(self, other):
+        return SymExpr.makeSymExpr([self, -other])
     def __mul__(self, other):
         if sym_expand and isinstance(other, SymExpr): return other * self
         return SymTerm.makeSymTerm([self, other])
     def __neg__(self): return SymTerm.makeSymTerm([SymConst(-1.0), self])
+    def tosinwave(x, a, b):
+        return np.sqrt(a*a+b*b)*np.sin(x+np.arctan2(b, a))
     def apply_to(self, symdict):
-        funcs = {'sin': np.sin, 'cos': np.cos, 'sqrt': np.sqrt, 'atan': np.arctan2}
+        funcs = {'sin': np.sin, 'cos': np.cos, 'sqrt': np.sqrt, 'atan': np.arctan2, 'tosinwave': SymFunc.tosinwave}
         if isinstance(self.sym, list): return funcs[self.func](*(x.apply_to(symdict) for x in self.sym)) 
         return funcs[self.func](self.sym.apply_to(symdict))
+    def num_ops(self):
+        ops = {'+': 0, '*': 0, 'tosinwave': 1 if self.func == 'tosinwave' else 0}
+        if isinstance(self.sym, list):
+            for innerops in (x.num_ops() for x in self.sym if isinstance(x, (SymExpr, SymTerm, SymFunc))):
+                ops['+'] += innerops['+']; ops['*'] += innerops['*']; ops['tosinwave'] += innerops['tosinwave']
+        return ops
+    def partial_deriv(self, symbol):
+        if self.func == 'sin' and symbol == self.sym: return SymFunc('cos', self.sym)
+        elif self.func == 'cos' and symbol == self.sym: return -SymFunc('sin', self.sym)
+        #sqrt and atan and tosinwave require division implemented
+        return SymConst(0.0)
     def __hash__(self): return hash((self.func, *self.sym)) if isinstance(self.sym, list) else hash((self.func, self.sym))
-    def __lt__(self, other): return self.sym < other.sym
-    def __eq__(self, other): return self.func == other.func and self.sym == other.sym
+    def __lt__(self, other):
+        if ((self.sym.sums[0] if isinstance(self.sym, SymExpr) else self.sym) ==
+            (other.sym.sums[0] if isinstance(other.sym, SymExpr) else other.sym)): return SymFunc.FuncOrder[self.func] < SymFunc.FuncOrder[other.func]
+        return ((self.sym.sums[0] if isinstance(self.sym, SymExpr) else self.sym) <
+                 (other.sym.sums[0] if isinstance(other.sym, SymExpr) else other.sym))
+    def __eq__(self, other): return self.func == other.func and type(self.sym) == type(other.sym) and self.sym == other.sym
     def __repr__(self): return str(self)
     def __str__(self): return self.func + '(' + (",".join([str(x) for x in self.sym]) if isinstance(self.sym, list) else str(self.sym)) + ')'
 def make_u3_sym(parameters):
-    cosTheta, sinTheta = SymFunc('cos', parameters[0]),  SymFunc('sin', parameters[0])
-    cosPhi, sinPhi = SymFunc('cos', parameters[1]), SymFunc('sin', parameters[1])
-    cosLambda, sinLambda = SymFunc('cos', parameters[2]), SymFunc('sin', parameters[2])
-    #SymFunc('cos', parameters[1]+parameters[2]), SymFunc('sin', parameters[1]+parameters[2])
+    cosTheta, sinTheta = SymFunc.makeSymFunc('cos', parameters[0]),  SymFunc.makeSymFunc('sin', parameters[0])
+    cosPhi, sinPhi = SymFunc.makeSymFunc('cos', parameters[1]), SymFunc.makeSymFunc('sin', parameters[1])
+    cosLambda, sinLambda = SymFunc.makeSymFunc('cos', parameters[2]), SymFunc.makeSymFunc('sin', parameters[2])
+    #cosPhiLambda, sinPhiLambda = SymFunc.makeSymFunc('cos', parameters[1]+parameters[2]), SymFunc.makeSymFunc('sin', parameters[1]+parameters[2])
     #cos(a+b)=cos(a)cos(b)-sin(a)sin(b)
     #sin(a+b)=sin(a)cos(b)+cos(a)sin(b)
+    cosPhiLambda, sinPhiLambda = cosPhi*cosLambda-sinPhi*sinLambda, sinPhi*cosLambda+cosPhi*sinLambda 
     return [[(cosTheta, SymConst(0)),
              (-cosLambda * sinTheta, -sinLambda * sinTheta)],
             [(cosPhi * sinTheta, sinPhi * sinTheta),
-             ((cosPhi*cosLambda-sinPhi*sinLambda) * cosTheta, (sinPhi*cosLambda+cosPhi*sinLambda) * cosTheta)]] 
+             (cosPhiLambda * cosTheta, sinPhiLambda * cosTheta)]] 
 def make_ry_sym(parameters):
-    cosTheta, sinTheta = SymFunc('cos', parameters[0]), SymFunc('sin', parameters[0])
+    cosTheta, sinTheta = SymFunc.makeSymFunc('cos', parameters[0]), SymFunc.makeSymFunc('sin', parameters[0])
     return [[(cosTheta, SymConst(0)),
              (-sinTheta, SymConst(0))],
             [(sinTheta, SymConst(0)),
@@ -1003,15 +1096,37 @@ def apply_to_qbit_loop_sym(unitary, num_qbits, target_qbit, control_qbit, gate):
     t = np.roll(np.arange(num_qbits), target_qbit)
     idxs = np.arange(pow2qb).reshape(*([2]*num_qbits)).transpose(t).reshape(-1, 2)
     for pair in (idxs if control_qbit is None else idxs[(idxs[:,0] & (1<<control_qbit)) != 0,:]):
-        print(pair)
         unitary[pair[0]], unitary[pair[1]] = twoByTwoFloat_sym(gate, [unitary[pair[0]], unitary[pair[1]]])
     return unitary
 def process_gates_sym(unitary, num_qbits, parameters, target_qbits, control_qbits):
+    unitary = [x[:] for x in unitary]
     return process_gates_loop_sym(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_loop_sym)
 def process_gates_loop_sym(unitary, num_qbits, parameters, target_qbits, control_qbits, apply_to_qbit_func):
     for param, target_qbit, control_qbit in zip(parameters, target_qbits, control_qbits):
         unitary = apply_to_qbit_func(unitary, num_qbits, target_qbit, None if control_qbit == target_qbit else control_qbit, (make_u3_sym(param) if control_qbit is None or control_qbit==target_qbit else make_cry_sym(param)))
     return unitary
+def normal_cost_func_ops(num_qbits, levels):
+    num_cry = num_qbits * levels
+    num_u3 = num_qbits*(num_qbits-1)*levels+num_qbits
+    return {'+': (1<<num_qbits) + (4**num_qbits)*(6*num_u3+3*num_cry), '*': (4**num_qbits)*(8*num_u3+4*num_cry)}
+def sym_min_param(num_qbits, uni_sym, target_qbits, control_qbits, param_consts, param_sym, paramidxs):
+    idx = 0
+    param_consts = [x[:] for x in param_consts]
+    paramidx = []
+    for i, p in enumerate(param_consts):
+        if idx in paramidxs: param_consts[i][0] = param_sym[i][0]; paramidx.append((i, 0))
+        idx+=1
+        if not param_consts[i][1] is None:
+            if idx in paramidxs: param_consts[i][1] = param_sym[i][1]; paramidx.append((i, 1))
+            idx+=1
+        if not param_consts[i][2] is None:
+            if idx in paramidxs: param_consts[i][2] = param_sym[i][2]; paramidx.append((i, 2))
+            idx+=1
+    target_sym = process_gates_sym(uni_sym, num_qbits, param_consts, target_qbits, control_qbits)
+    final_sym = SymConst(0.0)
+    for i in range(1<<num_qbits):
+        final_sym = final_sym + target_sym[i][i][0]
+    return final_sym, paramidx
 def sym_execute():
     from qiskit import QuantumCircuit, transpile
     from qgd_python.utils import get_unitary_from_qiskit_circuit
@@ -1038,20 +1153,46 @@ def sym_execute():
     control_qbits = np.array([x['control_qbit'] if 'control_qbit' in x else x['target_qbit'] for x in reversed(gates)], dtype=np.uint8)
     params = np.array([[x['Theta']/2, 0 if x['type'] == 'CRY' else x['Phi'], 0 if x['type'] == 'CRY' else x['Lambda']] for x in reversed(gates)], dtype=np.float64)
     #print(1-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/Umtx_orig.shape[0], cDecompose.Optimization_Problem(xn), cDecompose.Optimization_Problem_Combined(xn)[0])
-    Umtx_orig = np.random.rand(*Umtx_orig.shape) + np.random.rand(*Umtx_orig.shape)*1j
-    num_gates = 3
+    num_qbits = Umtx_orig.shape[0].bit_length()-1
+    num_cry = num_qbits * levels
+    num_u3 = num_qbits*(num_qbits-1)*levels+num_qbits
+    #Umtx_orig = np.random.rand(*Umtx_orig.shape) + np.random.rand(*Umtx_orig.shape)*1j
+    print(normal_cost_func_ops(num_qbits, levels), num_cry, num_u3, sum(1 for x in gates if x['type'] == 'CRY'), len(gates), num_of_parameters)
+    uni_stamped = [[(SymConst(np.real(Umtx_orig[j][i])), SymConst(-np.imag(Umtx_orig[j][i]))) for j in range(Umtx_orig.shape[1])] for i in range(Umtx_orig.shape[0])]
+    param_stamped = [[SymConst(x['Theta']/2), None if x['type'] == 'CRY' else SymConst(x['Phi']), None if x['type'] == 'CRY' else SymConst(x['Lambda'])] for i, x in reversed(list(enumerate(gates)))]
     uni_sym = [[(SymSymbol('r' + str(i) + '_' + str(j)), SymSymbol('i' + str(i) + '_' + str(j))) for j in range(Umtx_orig.shape[1])] for i in range(Umtx_orig.shape[0])]
-    param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates[:num_gates])))]
-    target_sym = process_gates_sym(uni_sym, Umtx_orig.shape[0].bit_length()-1, param_sym, target_qbits[-num_gates:], control_qbits[-num_gates:])
+    param_sym = [[SymSymbol('ϴ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('φ' + str(i)), None if x['type'] == 'CRY' else SymSymbol('λ' + str(i))] for i, x in reversed(list(enumerate(gates)))]
+    param_symdict = dict(collections.ChainMap(*
+               [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates)))]))
+    for i in itertools.combinations(range(num_of_parameters), 1):
+        minsym, paramidx = sym_min_param(Umtx_orig.shape[0].bit_length()-1, uni_stamped, target_qbits, control_qbits, param_stamped, param_sym, {*i})
+        print(minsym, paramidx)
+        def costfunc(sym, value):
+            oldval = param_symdict[sym.sym]
+            param_symdict[sym.sym] = value
+            cost = 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits)
+            param_symdict[sym.sym] = oldval
+            return cost
+        partials = [minsym.partial_deriv(param_sym[j][k]) for j, k in paramidx]
+        print(SymExpr.partial_deriv_solver(partials, [param_sym[j][k] for j, k in paramidx], costfunc))
+        print(cDecompose.Optimization_Problem(xn), 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits))
+    #print(1.0-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/(1<<num_qbits))
+    assert False
+    num_gates = len(gates)
+    target_sym = process_gates_sym(uni_sym, Umtx_orig.shape[0].bit_length()-1, param_sym[-num_gates:], target_qbits[-num_gates:], control_qbits[-num_gates:])
     symdict = dict(collections.ChainMap(*[{'r' + str(i) + '_' + str(j): np.real(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])},
                {'i' + str(i) + '_' + str(j): -np.imag(Umtx_orig[j][i]) for j in range(Umtx_orig.shape[1]) for i in range(Umtx_orig.shape[0])}] +
                [{'ϴ' + str(i): x['Theta']/2, 'φ' + str(i): None if x['type'] == 'CRY' else x['Phi'], 'λ' + str(i): None if x['type'] == 'CRY' else x['Lambda']} for i, x in reversed(list(enumerate(gates[:num_gates])))]))
+    #sin(arctan(x))=x/sqrt(1+x^2), cos(arctan(x))=1/sqrt(1+x^2)
+    #arctan(-x)=-arctan(x)
+    #arctan(1/x)=-PI/2-arctan(x) if x<0 else PI/2-arctan(x)
+    #x+y+z+xy+xz+yz+xyz=x(1+y(1+z)+z)+y(1+z)+z
     for i in range(Umtx_orig.shape[0]):               
-        print(target_sym[i][i][0], target_sym[i][i][1])
+        print(target_sym[i][i][0])
         print(target_sym[i][i][0].apply_to(symdict))
         print(target_sym[i][i][1].apply_to(symdict))
         print(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params[-num_gates:], target_qbits[-num_gates:], control_qbits[-num_gates:])[i,i])
-        print(len(target_sym[i][i][0].sums), target_sym[i][i][0].num_ops())
+        print(target_sym[i][i][0].num_ops()) #len(target_sym[i][i][0].sums)
 #train_model(num_of_parameters, 100000)
 #transformer_model()
 #newton_method()
