@@ -837,7 +837,7 @@ class SymExpr:
         allsums = {}
         for i, sum in enumerate(newsums):
             if isinstance(sum, SymTerm):
-                t = tuple([term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]])
+                t = tuple(sorted(term for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"]))
                 if len(t) != 0:
                     if not t in allsums: allsums[t] = set()
                     allsums[t].add(i)
@@ -898,27 +898,146 @@ class SymExpr:
                 newsums = list(filter(lambda x: not x is None, newsums))
         if len(newsums) == 0: return SymConst(0.0)
         return SymExpr(newsums) if len(newsums) > 1 else newsums[0]
+    def linear(a, b): #ax+b=0, x=-b/a
+        return [-b / a]
+    def quadratic(a, b, c): #ax^2+bx+c=0
+        discriminant = b*b - 4*a*c
+        if discriminant < 0: return []
+        if discriminant == 0: return [-b/(2*a)]
+        return [(-b+np.sqrt(b*b-4*a*c))/(2*a), (-b-np.sqrt(b*b-4*a*c))/(2*a)]
+    def cubic(a, b, c, d):
+        discriminant = 18*a*b*c*d-4*b*b*b*d+b*b*c*c-4*a*c*c*c-27*a*a*d*d
+        d0 = b*b-3*a*c
+        d1 = 2*b*b*b-9*a*b*c+27*a*a*d
+        print(d0, d1)
+        if d1*d1-4*d0*d0*d0 < 0: return []
+        if d0==0 and d1==0: return [-b/(3*a)]
+        C = np.cbrt((d1+np.sqrt(d1*d1-4*d0*d0*d0))/2)
+        if C == 0: C = np.cbrt((d1-np.sqrt(d1*d1-4*d0*d0*d0))/2)
+        #C*(-1+np.sqrt(3)*1j)/2+2*d0/(-1+np.sqrt(3)*1j)/C
+        #C*C*(-1+np.sqrt(3)*1j)/(2*C)+d0*(-1-np.sqrt(3)*1j)/(2*C)
+        #(C*C*(-1+np.sqrt(3)*1j)+d0*(-1-np.sqrt(3)*1j))/(2*C)
+        sol = [-(b+C+d0/C)/(3*a)]
+        #if discriminant > 0: 3 real roots
+        print(C)
+        if C*C != d0: return sol
+        return [*sol, -(b+(-C*C-d0)/(2*C))/(3*a)]
+        print(d0, d1, C)
+    def quartic(a, b, c, d, e):
+        depa = -3*b*b/(8*a*a)+c/a
+        depb = b*b*b/(8*a*a*a)-b*c/(2*a*a)+d/a
+        depc = -3*b*b*b*b/(256*a*a*a*a)+c*b*b/(16*a*a*a)-b*d/(4*a*a)+e/a
+        if depb == 0: #biquadratic u^4+au^2+c=0
+            print(1, depa, depc)
+            zs = SymExpr.quadratic(1, depa, depc)
+            #if 0 returned, handle specially as odd number of solutions
+            us = [np.sqrt(z) for z in zs if z>=0] + [-np.sqrt(z) for z in zs if z>=0]
+            return [u - b/(4*a) for u in us]
+        else: #u^4+au^2+bu+c=0
+            pass
+    def check_poly_funcs():
+        assert SymExpr.linear(2, 3) == [-3/2]
+        assert SymExpr.quadratic(1, 0, 4) == []
+        assert SymExpr.quadratic(1, -6, 9) == [3]
+        assert SymExpr.quadratic(1, -5, 6) == [3, 2]
+        assert SymExpr.cubic(1, 2, 4, 8) == [-2]
+        assert SymExpr.cubic(1, 3, 3, 1) == [-1]
+        assert SymExpr.cubic(1, -4, 4, 0) == [0, 2]
+        assert SymExpr.cubic(1, -6, 11, -6) == [1, 2, 3], SymExpr.cubic(1, -6, 11, -6)
+        assert SymExpr.cubic(1, 0, 2, 3) == [(-2-2*np.cbrt(2/(677-15*np.sqrt(2037)))-np.cbrt(4*(677-15*np.sqrt(2037))))/15], SymExpr.cubic(1, 0, 2, 3) #depressed cubics with 0, 1, 2,3 real roots
+        assert SymExpr.cubic(1, 0, -3, 2) == [-2, 1], SymExpr.cubic(1, 0, -3, 2)
+        assert SymExpr.cubic(1, 0, 2, -2) == [-1.7693, 0.5344]
+        assert SymExpr.cubic(1, 0, -7, 6) == [-3, 1, 2]
+        assert SymExpr.quartic(1, 4, 6, 4, 1) == []
+        assert SymExpr.quartic(1, -4, 6, -4, 1) == [0.5981]
+        assert SymExpr.quartic(1, -3, 2, 3, -2) == [np.sqrt(2), -np.sqrt(2)]
+        assert SymExpr.quartic(1, -5, 6, -5, 1) == [2 + np.sqrt(3), 2 - np.sqrt(3)]
+        assert SymExpr.quartic(1, -8, 17, -10, 1) == [0.143, 0.305, 1.957]
+        assert SymExpr.quartic(1, 0, -10, 0, 9) == [-3, -1, 1, 3]
+        assert SymExpr.quartic(1, -7, 10, 7, -6) == [-1.966, 0.732, (5+np.sqrt(13))/2, (5-np.sqrt(13))/2]
+        assert SymExpr.quartic(1, 0, 2, 0, 3) == [] #depresed quartics with 0, 1, 2, 3, 4 real roots
+        assert SymExpr.quartic(1, 0, -4, 0, 4) == [np.sqrt(2), -np.sqrt(2)]
+        assert SymExpr.quartic(1, 0, -3, 0, -4) == [2, -2]
+        assert SymExpr.quartic(1, 0, 2, 0, -1) == [np.sqrt(np.sqrt(2)-1), -np.sqrt(np.sqrt(2)-1)]
+        assert SymExpr.quartic(1, 0, -5, 0, 4) == [2, 1, -2, -1]
+        
     def partial_deriv_solver(functions, symbols, costfunc): #assert len(functions) == len(symbols)
         #assumes the function is bounded and the extreme value theorem is satisfied
+        print(functions)
         def partial_deriv_solver_inner(functions, symbols):
-            b, a = [], []
-            for func in functions:
+            b, a, bdbl, adbl = [], [], [], []
+            #if len(functions) == 1 and isinstance(functions[0], SymTerm):
+            #    #C*sin(x)cos(x)==C*sin(2x)/2==0 only when x=0, x=PI/2
+            #    return [[0.0], [np.pi/2]]
+            #A*sin(x)+B*cos(x)+C*sin(x)*sin(x)+D*sin(x)*cos(x)+E*cos(x)*sin(x)+F*cos(x)*cos(x)
+            #A*sin(x)+B*sin(y) proof of conversion to product
+            #A*sin(a+b)=A*sin(a)cos(b)+A*cos(a)sin(b)
+            #+B*sin(a-b)=B*sin(a)cos(b)-B*cos(a)sin*b)
+            #=A*sin(a+b)+B*sin(a+b)=(A+B)sin(a)cos(b)+(A-B)cos(a)sin(b)
+            #x=a+b, y=a-b
+            #=A*sin(x)+B*sin(y)=(A+B)sin((x+y)/2)cos((x-y)/2)+(A-B)cos((x+y)/2)sin((x-y)/2)
+            #Q=(A+B)sin((x+y)/2), R=(A-B)cos((x+y)/2), P = (x-y)/2 
+            #A*sin(x)+B*sin(y)=Q*cos(P)+R*sin(p)=sqrt(Q*Q+R*R)sin(P+arctan(Q/R))
+            for func in functions: #(1+sin+cos)(sin+cos)
                 allsums = {} #factor one parameter, earliest first            
                 for i, sum in enumerate(func.sums):
                     if isinstance(sum, SymTerm):
-                        for j, term in enumerate(sum.var):
-                            if isinstance(term, SymFunc) and term.func in ["cos", "sin"] and term.sym == symbols[0]:
-                                if not term in allsums: allsums[term.func] = set()
-                                allsums[term.func].add((i, j))
-                                break
-                        else: assert False
+                        t = tuple(term.func for term in sum.var if isinstance(term, SymFunc) and term.func in ["cos", "sin"] and term.sym.sym == symbols[0])
+                        assert len(t) != 0
+                        if not t in allsums: allsums[t] = set()
+                        allsums[t].add(i)
                     elif isinstance(sum, SymFunc) and sum.func in ["cos", "sin"]:
-                        if not sum in allsums: allsums[sum] = set()
-                        allsums[sum.func].add((i, j))
+                        if not (sum.func,) in allsums: allsums[(sum.func,)] = set()
+                        allsums[(sum.func,)].add(i)
                     else: assert False, (sum, symbols)
-                b.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(func.sums[k].var) if j != l]) for k, l in allsums['cos']]))
-                a.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for j, t in enumerate(func.sums[k].var) if j != l]) for k, l in allsums['sin']]))
+                if ('sin',) in allsums and ('cos',) in allsums:
+                    b.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for t in func.sums[k].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"] or t.sym.sym != symbols[0]]) for k in allsums[('cos',)]]))
+                    a.append(SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for t in func.sums[k].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"] or t.sym.sym != symbols[0]]) for k in allsums[('sin',)]]))
+                elif 'sin' in allsums or 'cos' in allsums: assert False
+                if ('sin', 'cos') in allsums and ('sin', 'sin') in allsums and ('cos', 'cos') in allsums: #sin(x)cos(x)=0.5*sin(2x), sin(x)sin(x)=-0.5*cos(2x), cos(x)cos(x)=0.5*cos(2x)
+                    adbl.append(SymConst(0.5)*SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for t in func.sums[k].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"] or t.sym.sym != symbols[0]]) for k in allsums[('sin', 'cos',)]]))
+                    bdbl.append((SymConst(0.5) *
+                        (SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for t in func.sums[k].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"] or t.sym.sym != symbols[0]]) for k in allsums[('cos', 'cos',)]]) -  
+                        SymExpr.makeSymExpr([SymTerm.makeSymTerm([t for t in func.sums[k].var if not isinstance(t, SymFunc) or not t.func in ["cos", "sin"] or t.sym.sym != symbols[0]]) for k in allsums[('sin', 'sin',)]]))))
+                elif ('sin', 'cos') in allsums or ('sin', 'sin') in allsums or ('cos', 'cos') in allsums: assert False
             if len(symbols) == 1: #x=(-1)^k*arcsin(y)+PI*k if sin(x)=y
+                if len(a) != 0 and len(adbl) != 0:
+                    A, B = SymFunc.makeSymFunc('sqrt', a[0]*a[0]+b[0]*b[0]), SymFunc.makeSymFunc('sqrt', adbl[0]*adbl[0]+bdbl[0]*bdbl[0])
+                    #x, y = SymSymbol(symbols[0]) + SymFunc.makeSymFunc('atan', [b[0], a[0]]), SymConst(2.0)*SymSymbol(symbols[0]) + SymFunc.makeSymFunc('atan', [bdbl[0], adbl[0]])
+                    #Q, R, P = (A+B)*SymFunc.makeSymFunc('sin', SymConst(0.5)*(x+y)), (A-B)*SymFunc.makeSymFunc('cos', SymConst(0.5)*(x+y)), SymConst(0.5)*(x-y)
+                    #Q^2+P^2=(A+B)^2sin^2(x)+(A-B)^2(1-sin^2(x))=(A-B)^2+sin^2(x)((A+B)^2-(A-B)^2)
+                    #print(functions[0].apply_to({symbols[0]: 0}))
+                    #print((SymFunc.makeSymFunc('sqrt', Q*Q+R*R)*SymFunc.makeSymFunc('sin', P+SymFunc.makeSymFunc('atan', [Q, R]))).apply_to({symbols[0]: 0}))
+                    #print(SymFunc.makeSymFunc('sin', P+SymFunc.makeSymFunc('atan', [Q, R])), (SymFunc('sin', P+SymFunc.makeSymFunc('atan', [Q, R]))).apply_to({symbols[0]: 0}))
+                    #print((P+SymFunc.makeSymFunc('atan', [Q, R])).apply_to({symbols[0]: 0}))
+                    #tan(a+b)=(tan(a)+tan(b))/(1-tan(a)tan(b)), tan(a-b)=(tan(a)-tan(b))/(1+tan(a)tan(b))
+                    #y=x/2
+                    #phi1 = [phi1, phi1-SymConst(np.pi)]
+                    K, phi1, phi2 = (A+B)/(A-B), SymConst(0.5)*(SymFunc.makeSymFunc('atan', [b[0], a[0]]) - SymFunc.makeSymFunc('atan', [bdbl[0], adbl[0]])), SymConst(0.5)*(SymFunc.makeSymFunc('atan', [b[0], a[0]]) + SymFunc.makeSymFunc('atan', [bdbl[0], adbl[0]])) 
+                    #print(K, phi1, phi2)
+                    #phi1 -= SymConst(np.pi) 
+                    #print(SymFunc('sin', (K*SymFunc('tan', SymConst(1.5)*SymSymbol(symbols[0])+phi2)-SymFunc('tan', SymConst(0.5)*SymSymbol(symbols[0])-phi1))).apply_to({symbols[0]: 0}))
+                    #tan(y-phi1)=Ktan(3y+phi2)
+                    #Ktan(3y+phi2)-tan(y-phi1)
+                    #C, D, z = SymFunc.makeSymFunc('tan', phi1), SymFunc.makeSymFunc('tan', phi2), SymFunc.makeSymFunc('tan', y)
+                    #print(K*SymFunc.makeSymFunc('tan', SymConst(3.0)*y+phi2)-SymFunc.makeSymFunc('tan', y-phi1))
+                    #tan3 = SymFunc.makeSymFunc('tan', SymConst(3.0)*y)
+                    #print(K*(tan3+D)/(SymConst(1.0)-tan3*D)-(z-C)/(SymConst(1.0)+z*C))
+                    #(tan(y)-tan(phi1))/(1+tan(y)tan(phi1))=K(tan(3y)+tan(phi2))/(1-tan(3y)tan(phi2))
+                    #(tan(y)-tan(phi1))(1-tan(3y)tan(phi2))=K(tan(3y)+tan(phi2))(1+tan(y)tan(phi1))
+                    #print(K*(tan3+D)*(SymConst(1.0)+z*C)-(z-C)*(SymConst(1.0)-tan3*D))
+                    #(tan(y)-tan(phi1))(1-tan(phi2)(3tan(y)-tan^3(y))/(1-3tan^2(y)))=K((3tan(y)-tan^3(y))/(1-3tan^2(y))+tan(phi2))(1+tan(y)tan(phi1))
+                    #z=tan(y), C=tan(phi1), D=tan(phi2)
+                    #(z-C)(1-D(3z-z^3)/(1-3z^2))=K((3z-z^3)/(1-3z^2)+D)(1+z*C)
+                    #(z-C)(1-3z^2-D(3z-z^3))=K((3z-z^3)+D(1-3z^2))(1+z*C)
+                    C, D, z = SymFunc('tan', phi1), SymFunc('tan', phi2), SymFunc('tan', SymSymbol(symbols[0]))                    
+                    #z-3z^3-3Dz^2+Dz^4-C+3Cz^2+3CDz-CDz^3=3Kz-Kz^3+KD-3KDz^2+3KCz^2-CKz^4+CDKz-3CDKz^3
+                    #(-CK-D)z^4+(CD+3-3CDK-K)z^3+(3KC-3KD-3C+3D)z^2+(3K+CDK-3CD-1)z+KD+C
+                    roots = np.roots([(-C*K-D).apply_to(None), (C*D+SymConst(3.0)-SymConst(3.0)*C*D*K-K).apply_to(None), (SymConst(3.0)*(K*C-K*D-C+D)).apply_to(None), (SymConst(3.0)*K+C*D*K-SymConst(3.0)*C*D-SymConst(1.0)).apply_to(None), (K*D+C).apply_to(None)])
+                    return [[2*np.arctan(r.real)] for r in roots if np.isclose(r.imag, 0.0)]
+                elif len(adbl) != 0:                   
+                    value = -SymFunc('atan', [bdbl[0], adbl[0]]).apply_to(None)
+                    return [[value/2], [np.pi+value/2]]
                 value = -SymFunc('atan', [b[0], a[0]]).apply_to(None)
                 return [[value], [np.pi+value]]
             else:
@@ -928,10 +1047,13 @@ class SymExpr:
                 print(b, a)
                 print(newfuncs)
                 newsols = partial_deriv_solver_inner(newfuncs, symbols[1:])
-                combined = [[-SymFunc('atan', [b[0], a[0]]).apply_to({sym: solution[i] for sym in enumerate(symbols[1:])})] + solution for solution in newsols]
+                combined = [[-SymFunc('atan', [b[0], a[0]]).apply_to({sym: solution[i] for i, sym in enumerate(symbols[1:])})] + solution for solution in newsols]
                 combined += [[x[0]+np.pi] + x[1:] for x in combined]
                 return combined
         solutions = partial_deriv_solver_inner(functions, symbols)
+        for func in functions:
+            for sol in solutions:
+                assert np.isclose(0.0, func.apply_to({symbols[i]: sol[i] for i in range(len(symbols))}))
         return min((solution for solution in solutions), key=lambda x: costfunc(symbols, x))
     def __init__(self, newsums):
         assert len(newsums) >= 2
@@ -1011,6 +1133,8 @@ class SymConst:
         elif self.c == 1.0: return other
         elif isinstance(other, SymConst): return SymConst(self.c * other.c)
         return other * self
+    def __truediv__(self, other):
+        if isinstance(other, SymConst): return SymConst(self.c / other.c)
     def __neg__(self): return SymConst(-self.c)
     def apply_to(self, symdict): return self.c
     def partial_deriv(self, symbol): return SymConst(0.0)
@@ -1024,16 +1148,18 @@ class SymSymbol:
     def apply_to(self, symdict): return symdict[self.sym]
     def partial_deriv(self, symbol): return SymConst(1.0) if symbol == self else SymConst(0.0)
     def __hash__(self): return hash(self.sym)
+    def __mul__(self, other): return SymTerm.makeSymTerm([self, other])
     def __lt__(self, other): return SymSymbol.SymOrder[self.sym[0]] < SymSymbol.SymOrder[other.sym[0]] if int(self.sym[1:]) == int(other.sym[1:]) else int(self.sym[1:]) < int(other.sym[1:])
     def __eq__(self, other): return self.sym == other.sym
     def __repr__(self): return str(self)
     def __str__(self): return self.sym
 class SymFunc:
-    FuncOrder = {'sin': 0, 'cos': 1, 'sqrt': 2, 'atan': 3, 'tosinwave': 4, 'pi': 5}
-    FuncNames = {'sin': 'sin', 'cos': 'cos', 'sqrt': '√', 'atan': 'atan', 'pi': 'π'}
+    FuncOrder = {'sin': 0, 'cos': 1, 'sqrt': 2, 'atan': 3, 'tosinwave': 4, 'pi': 5, 'tan': 6}
+    FuncNames = {'sin': 'sin', 'cos': 'cos', 'sqrt': '√', 'atan': 'atan', 'pi': 'π', 'tan': 'tan'}
     def makeSymFunc(func, sym):
         if func == 'sin' and isinstance(sym, SymConst): return SymConst(np.sin(sym.c))
         if func == 'cos' and isinstance(sym, SymConst): return SymConst(np.cos(sym.c))
+        if func == 'tan' and isinstance(sym, SymConst): return SymConst(np.tan(sym.c))
         if func == 'sqrt' and isinstance(sym, SymConst): return SymConst(np.sqrt(sym.c))
         if func == 'atan' and isinstance(sym[0], SymConst) and isinstance(sym[1], SymConst): return SymConst(np.arctan2(sym[0].c, sym[1].c))
         if func == 'tosinwave':
@@ -1055,7 +1181,7 @@ class SymFunc:
     def tosinwave(x, a, b):
         return np.sqrt(a*a+b*b)*np.sin(x+np.arctan2(b, a))
     def apply_to(self, symdict):
-        funcs = {'sin': np.sin, 'cos': np.cos, 'sqrt': np.sqrt, 'atan': np.arctan2, 'tosinwave': SymFunc.tosinwave}
+        funcs = {'sin': np.sin, 'cos': np.cos, 'tan': np.tan, 'sqrt': np.sqrt, 'atan': np.arctan2, 'tosinwave': SymFunc.tosinwave}
         if isinstance(self.sym, list): return funcs[self.func](*(x.apply_to(symdict) for x in self.sym)) 
         return funcs[self.func](self.sym.apply_to(symdict))
     def num_ops(self):
@@ -1067,7 +1193,7 @@ class SymFunc:
     def partial_deriv(self, symbol):
         if self.func == 'sin' and symbol == self.sym: return SymFunc('cos', self.sym)
         elif self.func == 'cos' and symbol == self.sym: return -SymFunc('sin', self.sym)
-        #sqrt and atan and tosinwave require division implemented
+        #tan, sqrt and atan and tosinwave require division implemented
         return SymConst(0.0)
     def __hash__(self): return hash((self.func, *self.sym)) if isinstance(self.sym, list) else hash((self.func, self.sym))
     def __lt__(self, other):
@@ -1181,15 +1307,15 @@ def sym_execute():
         minsym, paramidx = sym_min_param(Umtx_orig.shape[0].bit_length()-1, uni_stamped, target_qbits, control_qbits, param_stamped, param_sym, {*i})
         print(minsym, paramidx)
         def costfunc(syms, value):
-            oldvals = {sym.sym: param_symdict[sym.sym] for sym in syms}
+            oldvals = {sym: param_symdict[sym] for sym in syms}
             for i, sym in enumerate(syms):
-                param_symdict[sym.sym] = value[i]
+                param_symdict[sym] = value[i]
             cost = 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits)
             for sym in syms:
-                param_symdict[sym.sym] = oldvals[sym.sym]
+                param_symdict[sym] = oldvals[sym]
             return cost
         partials = [minsym.partial_deriv(param_sym[j][k]) for j, k in paramidx]
-        symbols = [param_sym[j][k] for j, k in paramidx]
+        symbols = [param_sym[j][k].sym for j, k in paramidx]
         print(costfunc(symbols, SymExpr.partial_deriv_solver(partials, symbols, costfunc)))
         print(cDecompose.Optimization_Problem(xn), 1.0-minsym.apply_to(param_symdict)/(1<<num_qbits))
     #print(1.0-np.trace(np.real(process_gates(Umtx_orig.conj().T, Umtx_orig.shape[0].bit_length()-1, params, target_qbits, control_qbits)))/(1<<num_qbits))
@@ -1212,5 +1338,6 @@ def sym_execute():
 #train_model(num_of_parameters, 100000)
 #transformer_model()
 #newton_method()
+#SymExpr.check_poly_funcs()
 sym_execute()
 #poly_cost_func()
