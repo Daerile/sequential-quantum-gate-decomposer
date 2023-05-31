@@ -270,11 +270,11 @@ Gate::apply_kernel_to(Matrix& u3_1qbit, Matrix& input, bool deriv) {
 #ifdef USE_AVX
 
     if ( qbit_num < 4 ) {
-        apply_kernel_to_input_AVX_small(u3_1qbit, input, deriv, target_qbit, control_qbit, matrix_size);
+        apply_kernel_to_input_AVX_small_single(u3_1qbit, input, deriv, target_qbit, control_qbit, matrix_size);
         return;
     }
     else if ( qbit_num < 10) {
-        apply_kernel_to_input_AVX(u3_1qbit, input, deriv, target_qbit, control_qbit, matrix_size);
+        apply_kernel_to_input_AVX_small_single(u3_1qbit, input, deriv, target_qbit, control_qbit, matrix_size);
         return;
      }
     else {

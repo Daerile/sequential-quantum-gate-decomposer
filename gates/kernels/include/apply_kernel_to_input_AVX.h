@@ -35,6 +35,7 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 */
 void apply_kernel_to_input_AVX_small(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
 
+void apply_kernel_to_input_AVX_small_single(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
 
 
 /**
@@ -44,6 +45,8 @@ void apply_kernel_to_input_AVX_small(Matrix& u3_1qbit, Matrix& input, const bool
 */
 void apply_kernel_to_input_AVX(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
 
+void apply_kernel_to_input_AVX_single(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
+
 
 /**
 @brief parallel AVX kernel to apply single qubit gate kernel on an input matrix
@@ -51,6 +54,8 @@ void apply_kernel_to_input_AVX(Matrix& u3_1qbit, Matrix& input, const bool& deri
 @param ?????????
 */
 void apply_kernel_to_input_AVX_parallel(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
+
+void apply_kernel_to_input_AVX_parallel_single(Matrix& u3_1qbit, Matrix& input, const bool& deriv, const int& target_qbit, const int& control_qbit, const int& matrix_size);
 
 
 #endif

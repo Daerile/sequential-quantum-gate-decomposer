@@ -24,7 +24,8 @@ along with this program.  If not, see http://www.gnu.org/licenses/.
 #include "RL_experience.h"
 #include "tbb/tbb.h"
 
-#include <cfloat>	
+#include <random>
+#include <cfloat>
 
 /** Nullary constructor of the class
 @return An instance of the class

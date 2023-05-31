@@ -43,6 +43,14 @@ struct QGD_Complex16 {
   double imag;
 };
 
+/// @brief Structure type representing complex numbers in the SQUANDER package
+struct QGD_Complex8 {
+    /// the real part of a complex number
+    float real;
+    /// the imaginary part of a complex number
+    float imag;
+};
+
 /// @brief Structure type conatining numbers of gates.
 struct gates_num {
   /// The number of U3 gates
